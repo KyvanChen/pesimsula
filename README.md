@@ -1,4 +1,4 @@
-# Rebuild Arena
+# Pesimsula
 
 A browser 3D driving simulator for the 2026 FRC game, REBUILT. One HTML file, three.js for drawing and Rapier for physics.
 
