@@ -34,7 +34,7 @@ Keys can be rebound in Settings. A gamepad also works.
 
 ## Multiplayer
 
-Menu → Multiplayer. One player hosts and gets a five-letter room code; up to five others join with it, pick a robot and an alliance, and the host starts the match. AI fills the empty spots.
+Menu → Multiplayer. One player hosts and gets a five-letter room code; up to five others join with it, or pick the room from the list of open rooms on the same screen, then pick a robot and an alliance, and the host starts the match. AI fills the empty spots.
 
 The host's browser runs the whole match, so it ends for everyone if the host leaves or closes the tab. Browsers first try to connect directly to each other (WebRTC, introduced through the public PeerJS service). When that fails, which is common between two computers on the same Wi-Fi and on school networks, the joiner switches by itself to a relay through a public MQTT broker; the lobby says so. The relay is a little slower and is a free public service with no guarantees.
 

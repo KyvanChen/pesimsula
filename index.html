@@ -32,6 +32,8 @@
   .foot { display:flex; justify-content:space-between; gap:10px; margin-top:20px; flex-wrap:wrap; }
   .note { color:var(--dim); font-size:13px; }
   input { font:inherit; color:var(--text); background:#081630; border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:150px; }
+  #mpRooms div { display:flex; justify-content:space-between; align-items:center; padding:6px 6px 6px 10px; border-radius:8px; background:#102347; margin-bottom:5px; font-size:14px; }
+  #mpRooms button { padding:4px 14px; }
   #mpPlayers div { display:flex; justify-content:space-between; padding:6px 10px; border-radius:8px; background:#102347; margin-bottom:5px; font-size:14px; }
   #mpPlayers .blue { border-left:4px solid var(--blue); } #mpPlayers .red { border-left:4px solid var(--red); }
 
@@ -170,6 +172,8 @@
       <div class="row"><label>Your name</label><input id="mpName" maxlength="12" placeholder="Driver"></div>
       <div class="row"><label>Start a room</label><button id="btnHost">Host a game</button></div>
       <div class="row"><label>Join a room</label><input id="mpCode" maxlength="5" placeholder="CODE" style="width:90px;text-transform:uppercase"> <button id="btnJoin">Join</button></div>
+      <div class="row" style="margin-bottom:6px"><label>Open rooms</label></div>
+      <div id="mpRooms"></div>
       <p class="note">The host's computer runs the match. Mode, team size and AI skill come from the host's main menu.</p>
     </div>
     <div id="lobbyRoom" style="display:none">
@@ -368,20 +372,55 @@ async function openPeer(id) {
 const RELAYS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081'];
 const relayTopic = room => 'pesimsula/v1/' + room;
 const HEAD = n => 18 + n * ROBOT_BYTES;      // snapshot bytes before the fuel
-async function relayOpen(url) {
+async function relayOpen(url, will) {
   const mod = await import('https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.esm.js'), mqtt = mod.default?.connect ? mod.default : mod;
   return new Promise((ok, fail) => {
-    const m = mqtt.connect(url, { connectTimeout: 6000, reconnectPeriod: 2000, keepalive: 20 });
+    const m = mqtt.connect(url, { connectTimeout: 6000, reconnectPeriod: 2000, keepalive: 20, ...(will ? { will } : {}) });
     const give = setTimeout(() => { m.end(true); fail(new Error('timeout')); }, 7000);
     m.once('connect', () => { clearTimeout(give); ok(m); });
     m.once('error', e => { clearTimeout(give); m.end(true); fail(e); });
   });
 }
 const text = bytes => new TextDecoder().decode(bytes);
+// ---------- room list ----------
+// An open room announces itself every couple of seconds on a shared topic; the multiplayer screen
+// listens there and lists what it hears. A room that stops announcing drops off the list.
+const ROOMS = 'pesimsula/v1/rooms/';
+const advertise = () => { if (net.relay && net.role === 'host') net.relay.publish(ROOMS + net.room, JSON.stringify({ room: net.room, host: net.players[0]?.name || 'Driver', n: net.players.length, playing: state === 'play', at: Date.now() }), { retain: true }); };
+const browse = { m: null, busy: false, rooms: new Map(), timer: 0 };
+async function browseRooms() {
+  if (browse.m || browse.busy) return; browse.busy = true; drawRooms();
+  for (const url of RELAYS) {
+    let m; try { m = await relayOpen(url); } catch { continue; }
+    if (state !== 'lobby' || net.role) { m.end(true); break; }                           // moved on while connecting
+    browse.m = m; m.subscribe(ROOMS + '+');
+    m.on('message', (topic, payload) => {
+      const code = topic.slice(ROOMS.length), r = payload.length ? rx(text(payload)) : null;
+      if (r && typeof r === 'object' && Math.abs(Date.now() - r.at) < 15000) browse.rooms.set(code, { ...r, seen: performance.now() }); else browse.rooms.delete(code);
+      drawRooms();
+    });
+    browse.timer = setInterval(() => { const now = performance.now(); for (const [k, r] of browse.rooms) if (now - r.seen > 7000) browse.rooms.delete(k); drawRooms(); }, 2000);
+    break;
+  }
+  browse.busy = false; drawRooms();
+}
+function stopBrowsing() { clearInterval(browse.timer); try { browse.m?.end(true); } catch { /* gone */ } browse.m = null; browse.rooms.clear(); }
+function drawRooms() {
+  const el = $('mpRooms'); if (!el) return;
+  const list = [...browse.rooms.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1), clean = t => String(t).slice(0, 12).replace(/[<>&"']/g, '');
+  el.innerHTML = list.length ? '' : `<p class="note" style="margin:0">${browse.busy ? 'Looking for open rooms…' : browse.m ? 'No open rooms right now. Host one, or type a code.' : 'Could not load the room list. You can still join with a code.'}</p>`;
+  for (const [code, r] of list) {
+    const row = document.createElement('div'), full = r.n >= 6;
+    row.innerHTML = `<span><b>${clean(r.host)}</b> · ${clean(code)} · ${+r.n || 1}/6 drivers${r.playing ? ' · in a match' : ''}</span>`;
+    const b = document.createElement('button'); b.textContent = full ? 'Full' : 'Join'; b.disabled = full;
+    b.onclick = () => { $('mpCode').value = code; joinRoom(); };
+    row.appendChild(b); el.appendChild(row);
+  }
+}
 // Host side: listen for joiners on the first relay that answers.
 async function relayHost(peer) {
   for (const url of RELAYS) {
-    let m; try { m = await relayOpen(url); } catch { continue; }
+    let m; try { m = await relayOpen(url, { topic: ROOMS + net.room, payload: '', retain: true }); } catch { continue; }      // the will takes the room off the list if the host vanishes
     if (net.peer !== peer || net.role !== 'host') { m.end(true); return; }           // the room was closed meanwhile
     const T = relayTopic(net.room), byId = new Map();
     net.relay = m; net.relayUrl = url;
@@ -399,8 +438,9 @@ async function relayHost(peer) {
       if (msg.t === 'hello' && net.conns.includes(conn)) { hostLobby(); return; }       // a repeated knock: answer again
       hostMessage(conn, msg);
     });
+    advertise();
     net.relayTimer = setInterval(() => {
-      const now = performance.now();
+      const now = performance.now(); advertise();
       m.publish(T + '/snap', new Uint8Array([2]));                                       // heartbeat: the room is alive
       for (const c of [...net.conns]) if (c.relay && now - c.seen > 10000) { byId.delete(c.cid); c.open = false; hostDrop(c); }
     }, 2000);
@@ -484,10 +524,11 @@ function broadcast(msg) { for (const c of net.conns) if (c.open) tx(c, msg); }
 function leaveRoom() {
   if (!net.role) return;
   const peer = net.peer, host = net.host, relay = net.relay; clearInterval(net.relayTimer);
+  if (relay && net.role === 'host') { try { relay.publish(ROOMS + net.room, '', { retain: true }); } catch { /* gone */ } }      // off the list
+  const end = relay; if (end) setTimeout(() => { try { end.end(true); } catch { /* gone */ } }, 300);
   net.role = null; net.peer = null; net.conns = []; net.host = null; net.players = []; net.prev = net.next = null;
   net.relay = null; net.relayTry = false; net.rkey = null; net.rseq = undefined;
   try { if (host?.relay) host.close(); } catch { /* already gone */ }
-  try { relay?.end(true); } catch { /* already gone */ }
   try { peer?.destroy(); } catch { /* already gone */ }
   $('lobbyJoin').style.display = ''; $('lobbyRoom').style.display = 'none'; $('btnLobbyStart').style.display = 'none'; status('');
 }
@@ -495,7 +536,8 @@ function drawLobby() {
   const inRoom = !!net.role;
   $('lobbyJoin').style.display = inRoom ? 'none' : ''; $('lobbyRoom').style.display = inRoom ? '' : 'none';
   $('btnLobbyStart').style.display = net.role === 'host' ? '' : 'none'; $('btnLobbyBack').textContent = inRoom ? 'Leave room' : 'Back';
-  if (!inRoom) return;
+  if (!inRoom) { if (state === 'lobby') browseRooms(); return; }
+  stopBrowsing();
   $('mpRoom').textContent = net.room;
   const mine = net.players.find(p => p.pid === net.me) || {};
   const setMine = change => { if (net.role === 'host') { Object.assign(net.players[0], change); hostLobby(); } else tx(net.host, { t: 'set', ...change }); };
@@ -688,7 +730,7 @@ $('mpName').onchange = () => { opts.name = myName(); save('ra.opts', opts); };
 $('btnHost').onclick = hostRoom;
 $('btnJoin').onclick = joinRoom;
 $('btnLobbyStart').onclick = hostStart;
-$('btnLobbyBack').onclick = () => { if (net.role) { leaveRoom(); drawLobby(); } else { state = 'menu'; show('menu'); drawMenu(); } };
+$('btnLobbyBack').onclick = () => { if (net.role) { leaveRoom(); drawLobby(); } else { stopBrowsing(); state = 'menu'; show('menu'); drawMenu(); } };
 
 // ============================================================
 // RENDERER & SCENE
@@ -1122,6 +1164,7 @@ function hitbox(t, stow = 0, block = 0) {
   const plate = block > 0 && t.rig ? blockerUpAt(t)[0] + t.rig.plate.length / 2 : 0;      // a raised shot blocker reaches out over the front
   return { back, side, front: Math.max(back + (out - back) * (1 - stow), back + (plate - back) * block) };
 }
+const startFront = t => hitbox(t, t.blocker ? 1 : 0).front;      // a robot whose intake stows starts with it up
 const isTall = r => r.type.tall || r.stow > 0.3;      // a stowed intake no longer fits under a trench
 function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
   const c = Math.cos(r.th), s = Math.sin(r.th), hb = hitbox(r.type, r.stow, r.block), ex = (hb.front + hb.back) / 2, ox = (hb.front - hb.back) / 2;
@@ -1447,7 +1490,7 @@ function newGame(roster, mode) {
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
   if (roster) {                         // multiplayer: the host decided who drives what
     for (const e of roster) {
-      const type = ROBOTS.find(t => t.id === e.type) || ROBOTS[0], sx = LINE - hitbox(type).front;
+      const type = ROBOTS.find(t => t.id === e.type) || ROBOTS[0], sx = LINE - startFront(type);
       const [x, z] = e.alliance === 'blue' ? [sx, zs[e.slot]] : [L - sx, W - zs[e.slot]];
       const r = makeRobot(type, e.alliance, e.slot, e.pid === net.me, x, z, e.name);
       r.pid = e.pid; r.player = e.pid != null; r.remote = r.player && !r.human; r.input = null;
@@ -1457,10 +1500,12 @@ function newGame(roster, mode) {
     game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, ...startSpot(opts.sx, opts.sz, ROBOTS[opts.robot])); game.me.player = true;
     game.robots.push(game.me);
     for (let s = 0; s < opts.size; s++) {
-      if (s > 0) { const t = pick('blue'); game.robots.push(makeRobot(t, 'blue', s, false, LINE - hitbox(t).front, zs[s])); }
-      const t = pick('red'); game.robots.push(makeRobot(t, 'red', s, false, L - LINE + hitbox(t).front, W - zs[s]));
+      if (s > 0) { const t = pick('blue'); game.robots.push(makeRobot(t, 'blue', s, false, LINE - startFront(t), zs[s])); }
+      const t = pick('red'); game.robots.push(makeRobot(t, 'red', s, false, L - LINE + startFront(t), W - zs[s]));
     }
   }
+  // An intake that can stow starts stowed, with the shot blocker down. Under a trench there is no room, so there it starts out.
+  for (const r of game.robots) if (r.blockBody && !underTrench(r.x, r.z)) { r.startStow = true; r.stow = 1; }
   for (const r of game.robots) collideField(r);
   if (net.role === 'client') { for (let i = 0; i < FUEL; i++) takeBall(i); } else stageFuel();
   camMode = 0; acc = 0;
@@ -1520,7 +1565,10 @@ function tick() {
     }
     if (r.blockBody) {
       // Sequence: intake swings up, then the blocker deploys; lowering runs it backwards.
-      if (r.blockOn && !r.climb) { r.stow = Math.min(1, r.stow + dt / 0.5); if (r.stow >= 1) r.block = Math.min(1, r.block + dt / 0.3); }
+      // The starting stow ends when the driver runs the intake or raises the blocker; AI drivers drop it as soon as they may move.
+      if (r.startStow && (r.cmd.intake || r.blockOn || (!r.player && !(game.hold > 0)))) r.startStow = false;
+      if (r.startStow && !r.climb) { r.stow = Math.min(1, r.stow + dt / 0.5); r.block = Math.max(0, r.block - dt / 0.3); }
+      else if (r.blockOn && !r.climb) { r.stow = Math.min(1, r.stow + dt / 0.5); if (r.stow >= 1) r.block = Math.min(1, r.block + dt / 0.3); }
       else { r.block = Math.max(0, r.block - dt / 0.3); if (r.block <= 0) r.stow = Math.max(0, r.stow - dt / 0.5); }
       const up = r.block > 0.6;
       if (up !== r.blockBody.isEnabled()) r.blockBody.setEnabled(up);
@@ -1650,7 +1698,7 @@ function drawHud() {
   const plan = shotPlan(me);
   $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : me.type.shuttle ? (me.hold.length ? `Hold ${keyName(keys.blocker)} to eject fuel` : 'Hopper empty') : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
     : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive(me.alliance) ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
-  $('camtxt').textContent = game.bricked ? 'BRICKED · watching from the driver station' : `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
+  $('camtxt').textContent = game.bricked ? 'BRICKED · watching from the driver station' : `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0.99 && !me.blockOn ? `intake stowed — ${keyName(keys.intake)} to deploy` : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
   let status = '';
   if (me.pin > 0.3) status = `PIN ${(PIN_LIMIT - me.pin).toFixed(1)}s — BACK OFF`;
   else if (me.atTower && !me.climb && me.type.climb) status = `AT TOWER — HOLD ${keyName(keys.climb)} TO CLIMB`;
@@ -1725,14 +1773,14 @@ function drawMap() {
   g.globalAlpha = 1; g.fillStyle = '#b58a3c';
   for (const s of [-1, 1]) g.fillRect((HUBX - BUMP_D / 2) * k, (MZ + s * (HUB / 2 + BUMP_W / 2) - BUMP_W / 2) * k, BUMP_D * k, BUMP_W * k);
   g.strokeStyle = '#8c9bb0'; g.lineWidth = 1; g.strokeRect(0, (MZ + DEPOT_OFF - DEPOT_W / 2) * k, DEPOT_D * k, DEPOT_W * k);
-  const hb = hitbox(t);
+  const hb = hitbox(t, t.blocker && opts.sx < LINE - 0.1 ? 1 : 0);      // drawn stowed unless it starts under a trench
   g.fillStyle = '#63bfff'; g.fillRect((opts.sx - hb.back) * k, (opts.sz - hb.side) * k, (hb.back + hb.front) * k, hb.side * 2 * k);
   g.fillStyle = '#051026'; g.beginPath(); g.moveTo((opts.sx + hb.front - 0.05) * k, opts.sz * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz - 0.2) * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz + 0.2) * k); g.fill();
 }
 // A robot starts with its front edge on its starting line. One that fits under a trench may also
 // start past the line, as long as it is under the trench.
 function startSpot(x, z, t) {
-  const hb = hitbox(t), half = hb.side, onLine = LINE - hb.front, lo = TRENCH_IN + half + 0.03, hi = MZ - half - 0.05;
+  const hb = hitbox(t), half = hb.side, onLine = LINE - startFront(t), lo = TRENCH_IN + half + 0.03, hi = MZ - half - 0.05;
   z = clamp(z, half + 0.05, W - half - 0.05);
   if (!t.tall && lo <= hi && x > onLine + 0.05 && Math.abs(z - MZ) > TRENCH_IN - 0.25) {
     const s = z < MZ ? -1 : 1;
