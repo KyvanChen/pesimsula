@@ -5,34 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pesimsula</title>
 <style>
-  :root { --bg:#0c1016; --panel:#141b26; --line:#263244; --text:#eef2f7; --dim:#8c9bb0;
-          --amber:#ffb300; --blue:#3d86ff; --red:#ff3d5a; --ok:#4cd07d; }
+  :root { --bg:#061022; --panel:#0c1c3a; --line:#1f3b6b; --text:#eaf2ff; --dim:#8ba6d0;
+          --accent:#63bfff; --blue:#3d86ff; --red:#ff3d5a; --ok:#4cd07d; }
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
                font-family: "Segoe UI", system-ui, sans-serif; overflow:hidden; user-select:none; }
   canvas#view { position:fixed; inset:0; width:100%; height:100%; display:block; }
   .screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-            background:rgba(8,11,16,.82); z-index:10; padding:16px; overflow:auto; }
+            background:rgba(4,10,24,.82); z-index:10; padding:16px; overflow:auto; }
   .screen.on { display:flex; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:26px 30px;
           width:min(960px, 100%); box-shadow:0 20px 60px rgba(0,0,0,.5); }
   .card.narrow { width:min(520px, 100%); }
   h1 { margin:0 0 4px; font-size:34px; letter-spacing:.06em; }
-  h1 span { color:var(--amber); }
-  h2 { margin:0 0 14px; font-size:20px; letter-spacing:.08em; color:var(--amber); text-transform:uppercase; }
+  h1 span { color:var(--accent); }
+  h2 { margin:0 0 14px; font-size:20px; letter-spacing:.08em; color:var(--accent); text-transform:uppercase; }
   p.sub { margin:0 0 20px; color:var(--dim); }
   .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; align-items:center; }
   .row > label { width:150px; color:var(--dim); font-size:14px; }
-  button { font:inherit; color:var(--text); background:#1c2636; border:1px solid var(--line);
+  button { font:inherit; color:var(--text); background:#13294f; border:1px solid var(--line);
            border-radius:8px; padding:9px 16px; cursor:pointer; }
-  button:hover { border-color:var(--amber); }
-  button.sel { background:var(--amber); color:#14110a; border-color:var(--amber); font-weight:600; }
-  button.go { background:var(--amber); color:#14110a; border-color:var(--amber); font-weight:700;
+  button:hover { border-color:var(--accent); }
+  button.sel { background:var(--accent); color:#051026; border-color:var(--accent); font-weight:600; }
+  button.go { background:var(--accent); color:#051026; border-color:var(--accent); font-weight:700;
               padding:12px 28px; font-size:16px; }
   .foot { display:flex; justify-content:space-between; gap:10px; margin-top:20px; flex-wrap:wrap; }
   .note { color:var(--dim); font-size:13px; }
-  input { font:inherit; color:var(--text); background:#101826; border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:150px; }
-  #mpPlayers div { display:flex; justify-content:space-between; padding:6px 10px; border-radius:8px; background:#141d2c; margin-bottom:5px; font-size:14px; }
+  input { font:inherit; color:var(--text); background:#081630; border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:150px; }
+  #mpPlayers div { display:flex; justify-content:space-between; padding:6px 10px; border-radius:8px; background:#102347; margin-bottom:5px; font-size:14px; }
   #mpPlayers .blue { border-left:4px solid var(--blue); } #mpPlayers .red { border-left:4px solid var(--red); }
 
   .picker { display:grid; grid-template-columns: 200px 1fr 230px; gap:20px; }
@@ -40,39 +40,39 @@
   .bots { display:flex; flex-direction:column; gap:8px; }
   .bots button { text-align:left; }
   .bots small { display:block; color:var(--dim); font-size:12px; }
-  .bots button.sel small { color:#3b2f10; }
-  #preview { width:100%; height:230px; border-radius:10px; background:#0d131c; border:1px solid var(--line); display:block; }
+  .bots button.sel small { color:#0f2c55; }
+  #preview { width:100%; height:230px; border-radius:10px; background:#07142b; border:1px solid var(--line); display:block; }
   .stat { display:grid; grid-template-columns: 86px 1fr 46px; gap:8px; align-items:center; font-size:13px; margin-top:7px; }
-  .stat .bar { height:8px; background:#0d131c; border-radius:4px; overflow:hidden; }
-  .stat .bar i { display:block; height:100%; background:var(--amber); }
+  .stat .bar { height:8px; background:#07142b; border-radius:4px; overflow:hidden; }
+  .stat .bar i { display:block; height:100%; background:var(--accent); }
   .stat b { text-align:right; font-weight:600; font-variant-numeric: tabular-nums; }
   #bio { color:var(--dim); font-size:14px; margin:10px 0 0; min-height:40px; }
-  #startmap { width:100%; border-radius:10px; background:#0d131c; border:1px solid var(--line); cursor:grab; touch-action:none; display:block; }
+  #startmap { width:100%; border-radius:10px; background:#07142b; border:1px solid var(--line); cursor:grab; touch-action:none; display:block; }
 
   #hud { position:fixed; inset:0; pointer-events:none; z-index:5; display:none; }
   #hud.on { display:block; }
   #board { position:absolute; top:12px; left:50%; transform:translateX(-50%); display:flex; align-items:stretch;
-           background:rgba(12,16,22,.86); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+           background:rgba(8,18,40,.86); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
   #board .side { padding:6px 22px; min-width:128px; text-align:center; }
   #board .side b { display:block; font-size:38px; line-height:1; font-variant-numeric: tabular-nums; }
   #board .side small { font-size:11px; letter-spacing:.1em; }
   #board .blue b { color:var(--blue); } #board .red b { color:var(--red); }
   #board .mid { padding:6px 22px; text-align:center; border-left:1px solid var(--line); border-right:1px solid var(--line); }
   #board .mid b { display:block; font-size:32px; line-height:1.05; font-variant-numeric: tabular-nums; }
-  #board .mid small { color:var(--amber); font-size:12px; letter-spacing:.1em; }
+  #board .mid small { color:var(--accent); font-size:12px; letter-spacing:.1em; }
   .hubon { color:var(--ok); } .huboff { color:var(--red); }
-  #me { position:absolute; left:14px; bottom:14px; background:rgba(12,16,22,.86); border:1px solid var(--line);
+  #me { position:absolute; left:14px; bottom:14px; background:rgba(8,18,40,.86); border:1px solid var(--line);
         border-radius:12px; padding:12px 16px; min-width:250px; }
   #me .name { font-weight:700; letter-spacing:.06em; }
-  #me .fuel { height:10px; background:#0d131c; border-radius:5px; overflow:hidden; margin:8px 0 6px; }
-  #me .fuel i { display:block; height:100%; background:var(--amber); width:0; }
+  #me .fuel { height:10px; background:#07142b; border-radius:5px; overflow:hidden; margin:8px 0 6px; }
+  #me .fuel i { display:block; height:100%; background:var(--accent); width:0; }
   #me div { font-size:14px; }
   #status { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); font-size:18px; font-weight:700;
             letter-spacing:.06em; text-shadow:0 2px 8px #000; text-align:center; }
-  #keys { position:absolute; right:14px; bottom:14px; background:rgba(12,16,22,.7); border:1px solid var(--line);
+  #keys { position:absolute; right:14px; bottom:14px; background:rgba(8,18,40,.7); border:1px solid var(--line);
           border-radius:12px; padding:10px 14px; font-size:12px; color:var(--dim); line-height:1.6; }
   #toast { position:absolute; top:96px; left:50%; transform:translateX(-50%); font-size:22px; font-weight:800;
-           letter-spacing:.08em; color:var(--amber); text-shadow:0 2px 10px #000; opacity:0; transition:opacity .3s; }
+           letter-spacing:.08em; color:var(--accent); text-shadow:0 2px 10px #000; opacity:0; transition:opacity .3s; }
   table { border-collapse:collapse; width:100%; font-variant-numeric: tabular-nums; }
   td, th { padding:6px 10px; text-align:right; border-bottom:1px solid var(--line); font-size:15px; }
   td:first-child, th:first-child { text-align:left; color:var(--dim); }
@@ -173,7 +173,7 @@
       <p class="note">The host's computer runs the match. Mode, team size and AI skill come from the host's main menu.</p>
     </div>
     <div id="lobbyRoom" style="display:none">
-      <div class="row"><label>Room code</label><b id="mpRoom" style="font-size:26px;letter-spacing:.2em;color:var(--amber)"></b></div>
+      <div class="row"><label>Room code</label><b id="mpRoom" style="font-size:26px;letter-spacing:.2em;color:var(--accent)"></b></div>
       <div class="row"><label>Your robot</label><span id="mpRobot"></span></div>
       <div class="row"><label>Your alliance</label><span id="mpSide"></span></div>
       <div id="mpPlayers"></div>
@@ -693,8 +693,8 @@ $('btnLobbyBack').onclick = () => { if (net.role) { leaveRoom(); drawLobby(); } 
 // ============================================================
 const renderer = new THREE.WebGLRenderer({ canvas: $('view'), antialias: true });
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x18202c);
-scene.fog = new THREE.Fog(0x18202c, 35, 80);
+scene.background = new THREE.Color(0x0a1730);
+scene.fog = new THREE.Fog(0x0a1730, 35, 80);
 const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 200);
 const hemi = new THREE.HemisphereLight(0xeaf1ff, 0x3a4658, 2.6);
 const sun = new THREE.DirectionalLight(0xffffff, 2.8);
@@ -903,7 +903,7 @@ function readBalls() {
 function labelSprite(text, color) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
   const g = c.getContext('2d'); g.font = 'bold 40px Segoe UI, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = 'rgba(8,11,16,.75)'; g.fillRect(0, 0, 256, 64); g.fillStyle = color; g.fillText(text, 128, 34);
+  g.fillStyle = 'rgba(4,10,24,.75)'; g.fillRect(0, 0, 256, 64); g.fillStyle = color; g.fillText(text, 128, 34);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
   s.scale.set(0.9, 0.225, 1); return s;
 }
@@ -1082,7 +1082,7 @@ function makeRobot(type, alliance, slot, human, x, z, label) {
     r.blockBody.setEnabled(false);
   }
   r.tilt = new THREE.Group(); r.mesh = buildRobotMesh(type, alliance); r.tilt.add(r.mesh);
-  const tag = labelSprite(human ? 'YOU' : (label || type.name).toUpperCase(), human ? '#ffb300' : (alliance === 'blue' ? '#8db7ff' : '#ff97a6'));
+  const tag = labelSprite(human ? 'YOU' : (label || type.name).toUpperCase(), human ? '#b9e6ff' : (alliance === 'blue' ? '#8db7ff' : '#ff97a6'));
   tag.position.set(0, (type.tall ? 0.78 : 0.44) + 0.55, 0); r.tilt.add(tag);
   scene.add(r.tilt);
   return r;
@@ -1535,7 +1535,7 @@ function finish() {
   if (net.role === 'host') { sendSnapshot(); broadcast({ t: 'end' }); }
   game.done = true; state = 'results'; $('brick').classList.remove('on');
   const s = summary(), win = s.blue.total > s.red.total ? 'BLUE WINS' : s.red.total > s.blue.total ? 'RED WINS' : 'TIE';
-  $('resTitle').textContent = win; $('resTitle').style.color = win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--amber)';
+  $('resTitle').textContent = win; $('resTitle').style.color = win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--accent)';
   const row = (name, key, cls = '') => `<tr class="${cls}"><td>${name}</td><td>${s.blue[key]}</td><td>${s.red[key]}</td></tr>`;
   $('resTable').innerHTML = `<tr><th></th><th class="b">BLUE</th><th class="r">RED</th></tr>` + row('Auto fuel', 'auto') + row('Teleop fuel', 'tele') +
     row('Tower', 'tower') + row('Foul points', 'foul') + row('Total', 'total', 'total') + row('Ranking points', 'rp') +
@@ -1619,7 +1619,7 @@ function drawHud() {
   if (me.pin > 0.3) status = `PIN ${(PIN_LIMIT - me.pin).toFixed(1)}s — BACK OFF`;
   else if (me.atTower && !me.climb && me.type.climb) status = `AT TOWER — HOLD ${keyName(keys.climb)} TO CLIMB`;
   else if (me.climb && me.climb < me.type.climb) status = 'KEEP HOLDING TO CLIMB HIGHER';
-  $('status').textContent = status; $('status').style.color = me.pin > 0.3 ? 'var(--red)' : 'var(--amber)';
+  $('status').textContent = status; $('status').style.color = me.pin > 0.3 ? 'var(--red)' : 'var(--accent)';
 }
 let toastTimer = 0;
 function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.opacity = 0, 1800); }
@@ -1683,14 +1683,14 @@ function drawPicker() {
 }
 function drawMap() {
   const c = $('startmap'), g = c.getContext('2d'), k = c.height / W, t = ROBOTS[opts.robot];
-  g.fillStyle = '#16233a'; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = '#0f2447'; g.fillRect(0, 0, c.width, c.height);
   g.strokeStyle = '#3d86ff'; g.lineWidth = 2; g.beginPath(); g.moveTo(LINE * k, 0); g.lineTo(LINE * k, c.height); g.stroke();
   g.fillStyle = '#55657c'; for (const o of OBSTACLES) if (o.x < MX) { g.globalAlpha = o.kind === 'overhead' ? 0.45 : 1; g.fillRect((o.x - o.hx) * k, (o.z - o.hz) * k, o.hx * 2 * k, o.hz * 2 * k); }
   g.globalAlpha = 1; g.fillStyle = '#b58a3c';
   for (const s of [-1, 1]) g.fillRect((HUBX - BUMP_D / 2) * k, (MZ + s * (HUB / 2 + BUMP_W / 2) - BUMP_W / 2) * k, BUMP_D * k, BUMP_W * k);
   g.strokeStyle = '#8c9bb0'; g.lineWidth = 1; g.strokeRect(0, (MZ + DEPOT_OFF - DEPOT_W / 2) * k, DEPOT_D * k, DEPOT_W * k);
-  g.fillStyle = '#ffb300'; g.fillRect((opts.sx - t.size / 2) * k, (opts.sz - t.size / 2) * k, t.size * k, t.size * k);
-  g.fillStyle = '#14110a'; g.beginPath(); g.moveTo((opts.sx + t.size / 2) * k, opts.sz * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz - 0.2) * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz + 0.2) * k); g.fill();
+  g.fillStyle = '#63bfff'; g.fillRect((opts.sx - t.size / 2) * k, (opts.sz - t.size / 2) * k, t.size * k, t.size * k);
+  g.fillStyle = '#051026'; g.beginPath(); g.moveTo((opts.sx + t.size / 2) * k, opts.sz * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz - 0.2) * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz + 0.2) * k); g.fill();
 }
 // A robot starts with its front bumper on its starting line. One that fits under a trench may also
 // start past the line, as long as it is under the trench.

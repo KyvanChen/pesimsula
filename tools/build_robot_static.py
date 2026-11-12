@@ -78,8 +78,9 @@ for p in parts:
     verts = trimesh.transform_points(p["verts"], to_game)
     size = verts.max(0) - verts.min(0)
     hit = DROP.search(p["path"])
-    if hit or size.max() < 0.035:
-        dropped[hit.group(0).lower() if hit else "small"] += 1
+    fuel = size.min() > 0.14 and size.max() < 0.16 and p["rgba"][0] > 200 and p["rgba"][2] < 80      # a game piece left in the CAD
+    if hit or fuel or size.max() < 0.035:
+        dropped[hit.group(0).lower() if hit else "fuel" if fuel else "small"] += 1
         continue
     clear = bool(CLEAR.search(p["path"])) and size.min() < 0.01 and np.sort(size)[1] > 0.12 or p["rgba"][3] < 250
     groups[(clear, p["rgba"][:3])].append((verts, p["faces"]))

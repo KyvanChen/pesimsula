@@ -275,7 +275,8 @@ groups = {}
 kept = collections.Counter()
 for r in full + extra:
     size = r["verts"].max(0) - r["verts"].min(0)
-    if r["group"] is None or DROP.search(r["name"]) or size.max() < 0.035:
+    fuel = size.min() > 0.14 and size.max() < 0.16 and r["rgb"][0] > 200 and r["rgb"][2] < 80      # a game piece left in the CAD
+    if r["group"] is None or DROP.search(r["name"]) or size.max() < 0.035 or fuel:
         continue
     groups.setdefault((r["group"], r["rgb"]), []).append((r["verts"], r["faces"]))
     kept[r["group"]] += len(r["faces"])
