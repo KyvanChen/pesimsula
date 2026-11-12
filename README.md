@@ -34,7 +34,7 @@ Keys can be rebound in Settings. A gamepad also works.
 
 Menu → Multiplayer. One player hosts and gets a five-letter room code; up to five others join with it, pick a robot and an alliance, and the host starts the match. AI fills the empty spots.
 
-The host's browser runs the whole match, so the host must keep the game tab visible, and the match ends for everyone if the host leaves. Browsers connect directly to each other (WebRTC, introduced through the public PeerJS service); some school or office networks block that.
+The host's browser runs the whole match, so it ends for everyone if the host leaves or closes the tab. Browsers connect directly to each other (WebRTC, introduced through the public PeerJS service); some school or office networks block that.
 
 ## What is in here
 

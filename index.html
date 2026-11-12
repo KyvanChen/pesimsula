@@ -344,7 +344,9 @@ async function openPeer(id) {
     peer.on('error', e => { fail(e); if (net.peer === peer && state === 'lobby') status(e.type === 'peer-unavailable' ? 'No room with that code.' : 'Connection problem: ' + e.type); });
   });
 }
-function broadcast(msg) { for (const c of net.conns) if (c.open) c.send(msg); }
+const tx = (c, msg) => { try { c.send(msg instanceof ArrayBuffer ? msg : JSON.stringify(msg)); } catch { /* channel closing */ } };
+const rx = msg => { if (typeof msg !== 'string') return msg; try { return JSON.parse(msg); } catch { return null; } };
+function broadcast(msg) { for (const c of net.conns) if (c.open) tx(c, msg); }
 function leaveRoom() {
   if (!net.role) return;
   const peer = net.peer; net.role = null; net.peer = null; net.conns = []; net.host = null; net.players = []; net.prev = net.next = null;
@@ -358,7 +360,7 @@ function drawLobby() {
   if (!inRoom) return;
   $('mpRoom').textContent = net.room;
   const mine = net.players.find(p => p.pid === net.me) || {};
-  const setMine = change => { if (net.role === 'host') { Object.assign(net.players[0], change); hostLobby(); } else net.host.send({ t: 'set', ...change }); };
+  const setMine = change => { if (net.role === 'host') { Object.assign(net.players[0], change); hostLobby(); } else tx(net.host, { t: 'set', ...change }); };
   choice('mpRobot', ROBOTS.map(t => t.name), () => ROBOTS.findIndex(t => t.id === mine.type), i => { opts.robot = i; setMine({ type: ROBOTS[i].id }); });
   choice('mpSide', ['Blue', 'Red'], () => mine.alliance === 'red' ? 1 : 0, i => setMine({ alliance: i ? 'red' : 'blue' }));
   $('mpPlayers').innerHTML = net.players.map(p => `<div class="${p.alliance}"><span>${p.name.replace(/[<>&]/g, '')}${p.pid === net.me ? ' (you)' : ''}${p.pid === 0 ? ' · host' : ''}</span>` +
@@ -369,7 +371,10 @@ async function hostRoom() {
   const room = Array.from({ length: 5 }, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join('');
   try { net.peer = await openPeer(ROOM_PREFIX + room); } catch { status('Could not open a room. Check your connection and try again.'); return; }
   Object.assign(net, { role: 'host', me: 0, room, conns: [], nextPid: 1, players: [{ pid: 0, name: myName(), type: ROBOTS[opts.robot].id, alliance: 'blue' }] });
+  net.peer.on('disconnected', () => { try { net.peer.reconnect(); } catch { /* closed */ } });      // keep the room findable
   net.peer.on('connection', conn => {
+    if (state === 'lobby') status('Someone is connecting…');
+    conn.on('open', () => { if (state === 'lobby') status('Share the room code. Press Start when everyone is in.'); });
     conn.on('data', msg => hostMessage(conn, msg));
     conn.on('close', () => hostDrop(conn));
     conn.on('error', () => hostDrop(conn));
@@ -377,12 +382,13 @@ async function hostRoom() {
   status('Share the room code. Press Start when everyone is in.'); drawLobby();
 }
 const sideCount = a => net.players.filter(p => p.alliance === a).length;
-function hostLobby() { for (const c of net.conns) if (c.open) c.send({ t: 'lobby', players: net.players, you: c.pid, room: net.room }); if (state === 'lobby') drawLobby(); }
+function hostLobby() { for (const c of net.conns) if (c.open) tx(c, { t: 'lobby', players: net.players, you: c.pid, room: net.room }); if (state === 'lobby') drawLobby(); }
 function hostMessage(conn, msg) {
-  if (!msg || typeof msg !== 'object') return;
+  msg = rx(msg);
+  if (!msg || typeof msg !== 'object' || msg instanceof ArrayBuffer) return;
   const player = net.players.find(p => p.pid === conn.pid);
   if (msg.t === 'hello' && !player) {
-    if (net.players.length >= 6) { conn.send({ t: 'full' }); return; }
+    if (net.players.length >= 6) { tx(conn, { t: 'full' }); return; }
     conn.pid = net.nextPid++; net.conns.push(conn);
     net.players.push({ pid: conn.pid, name: String(msg.name || 'Driver').slice(0, 12), type: ROBOTS.some(t => t.id === msg.type) ? msg.type : ROBOTS[0].id,
       alliance: sideCount('red') < sideCount('blue') ? 'red' : 'blue' });
@@ -448,21 +454,26 @@ function sendSnapshot() {
     if (b.on) { const t = b.body.translation(); dv.setInt16(o, clamp(t.x, -30, 30) * 1000, true); dv.setInt16(o + 2, clamp(t.y, -30, 30) * 1000, true); dv.setInt16(o + 4, clamp(t.z, -30, 30) * 1000, true); }
     else { dv.setInt16(o, owner[i], true); dv.setInt16(o + 2, -32768, true); dv.setInt16(o + 4, slot[i], true); }
   }
-  for (const c of net.conns) if (c.open) c.send(dv.buffer);
+  for (const c of net.conns) if (c.open) tx(c, dv.buffer);
 }
 // ---------- client ----------
 async function joinRoom() {
   const room = $('mpCode').value.trim().toUpperCase(); if (room.length < 4) { status('Type the room code first.'); return; }
   let peer; try { peer = await openPeer(); } catch { status('Could not connect. Check your connection and try again.'); return; }
   Object.assign(net, { role: 'client', peer, room, players: [], prev: null, next: null });
-  const conn = net.host = peer.connect(ROOM_PREFIX + room, { reliable: true });
+  const conn = net.host = peer.connect(ROOM_PREFIX + room, { reliable: true, serialization: 'raw' });
   status('Looking for room ' + room + '…');
-  conn.on('open', () => conn.send({ t: 'hello', name: myName(), type: ROBOTS[opts.robot].id }));
+  const giveUp = setTimeout(() => { if (net.host === conn && !conn.open) status('Found the room but could not connect to the host. This network may block direct connections — try the same Wi-Fi, or a phone hotspot.'); }, 12000);
+  conn.on('open', () => { clearTimeout(giveUp); status('Connected. Joining…'); tx(conn, { t: 'hello', name: myName(), type: ROBOTS[opts.robot].id }); });
   conn.on('data', clientMessage);
-  conn.on('close', () => { if (net.host !== conn) return; leaveRoom(); state = 'lobby'; paused = false; show('lobby'); drawLobby(); status('The host closed the room.'); });
+  conn.on('error', e => status('Connection error: ' + (e.type || e.message || e)));
+  conn.on('iceStateChanged', st => { if (net.host === conn && (st === 'failed' || st === 'disconnected') && state === 'lobby') status('Connection ' + st + '. This network may block direct connections.'); });
+  conn.on('close', () => { clearTimeout(giveUp); if (net.host !== conn) return; const was = state; leaveRoom(); state = 'lobby'; paused = false; show('lobby'); drawLobby(); status(was === 'lobby' ? 'Disconnected from the room.' : 'The host closed the room.'); });
   drawLobby();
 }
 function clientMessage(msg) {
+  msg = rx(msg); if (!msg) return;
+  if (typeof Blob !== 'undefined' && msg instanceof Blob) { msg.arrayBuffer().then(clientMessage); return; }
   if (msg instanceof ArrayBuffer || ArrayBuffer.isView(msg)) { if (state === 'play') readSnapshot(msg instanceof ArrayBuffer ? msg : msg.buffer.slice(msg.byteOffset, msg.byteOffset + msg.byteLength)); return; }
   if (msg.t === 'lobby') { net.players = msg.players; net.me = msg.you; net.room = msg.room; if (state === 'lobby') { drawLobby(); status('Waiting for the host to start.'); } }
   else if (msg.t === 'full') { leaveRoom(); drawLobby(); status('That room is full.'); }
@@ -519,7 +530,7 @@ function clientFrame(now) {
   net.sent = now;
   if (paused) Object.assign(me.cmd, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); else readHuman(me);
   const c = me.cmd;
-  net.host.send({ t: 'in', c: [c.vx, c.vz, c.w, (c.intake ? 1 : 0) | (c.shoot ? 2 : 0) | (c.climb ? 4 : 0) | (me.blockOn ? 8 : 0)] });
+  tx(net.host, { t: 'in', c: [c.vx, c.vz, c.w, (c.intake ? 1 : 0) | (c.shoot ? 2 : 0) | (c.climb ? 4 : 0) | (me.blockOn ? 8 : 0)] });
 }
 $('btnMulti').onclick = () => { state = 'lobby'; show('lobby'); $('mpName').value = opts.name || ''; drawLobby(); };
 $('mpName').onchange = () => { opts.name = myName(); save('ra.opts', opts); };
@@ -1461,10 +1472,8 @@ function drawSettings() {
 // MAIN LOOP -- fixed 60 Hz simulation, match clock counted in simulated time
 // ============================================================
 let acc = 0, last = performance.now(), lastDraw = 0;
-function frame(now) {
-  requestAnimationFrame(frame);
-  if (opts.fps && now - lastDraw < 1000 / opts.fps - 1) return;
-  const dt = Math.min(0.1, (now - last) / 1000); last = now; lastDraw = now;
+function simulate(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (net.role === 'client') { if (state === 'play') clientFrame(now); }
   else if (state === 'play' && (!paused || net.role)) {        // a multiplayer match never pauses
     if (game.bricked && now - game.brickAt > BRICK_SECONDS * 1000) finish();
@@ -1472,8 +1481,20 @@ function frame(now) {
     while (acc >= STEP && n < 5 && state === 'play') { tick(); acc -= STEP; n++; }
     if (n === 5) acc = 0;
   }
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (opts.fps && now - lastDraw < 1000 / opts.fps - 1) return;
+  lastDraw = now;
+  simulate(now);
   render();
 }
+// Browsers all but stop drawing a tab that is not on screen, which would freeze a multiplayer match for
+// everyone. A worker's timer keeps ticking, so it drives the match whenever drawing has stalled.
+try {
+  const pump = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 16)'], { type: 'text/javascript' })));
+  pump.onmessage = () => { const now = performance.now(); if (net.role && now - last > 60) simulate(now); };
+} catch { /* no workers: the match simply needs its tab on screen */ }
 
 buildField(); loadFieldModel(); buildBalls(); applyQuality(); drawMenu(); show('menu');
 $('loading').remove();
