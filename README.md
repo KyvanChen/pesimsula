@@ -4,7 +4,7 @@ A browser 3D driving simulator for the 2026 FRC game, REBUILT. One HTML file, th
 
 ## Play
 
-**Play it in your browser: https://kyvanchen.github.io/rebuild-arena/**
+**Play it in your browser: https://kyvanchen.github.io/pesimsula/**
 
 Nothing to install. To run it yourself instead, any static file server works. From this folder:
 
