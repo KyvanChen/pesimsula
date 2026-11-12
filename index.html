@@ -151,9 +151,9 @@
         <div id="stats"></div>
       </div>
       <div>
-        <div class="note" style="margin-bottom:6px">Drag your robot to its starting spot</div>
+        <div class="note" style="margin-bottom:6px">Drag your robot along the starting line</div>
         <canvas id="startmap" width="230" height="300"></canvas>
-        <div class="note" style="margin-top:6px">Left edge is your alliance wall.</div>
+        <div class="note" style="margin-top:6px">Left edge is your alliance wall. Robots that fit may also start under a trench.</div>
       </div>
     </div>
     <div class="foot">
@@ -1427,17 +1427,18 @@ function newGame(roster, mode) {
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
   if (roster) {                         // multiplayer: the host decided who drives what
     for (const e of roster) {
-      const [x, z] = e.alliance === 'blue' ? [2.6, zs[e.slot]] : [L - 2.6, W - zs[e.slot]];
-      const r = makeRobot(ROBOTS.find(t => t.id === e.type) || ROBOTS[0], e.alliance, e.slot, e.pid === net.me, x, z, e.name);
+      const type = ROBOTS.find(t => t.id === e.type) || ROBOTS[0], sx = LINE - type.size / 2;
+      const [x, z] = e.alliance === 'blue' ? [sx, zs[e.slot]] : [L - sx, W - zs[e.slot]];
+      const r = makeRobot(type, e.alliance, e.slot, e.pid === net.me, x, z, e.name);
       r.pid = e.pid; r.player = e.pid != null; r.remote = r.player && !r.human; r.input = null;
       game.robots.push(r); if (r.human) game.me = r;
     }
   } else {
-    game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, opts.sx, opts.sz); game.me.player = true;
+    game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, ...startSpot(opts.sx, opts.sz, ROBOTS[opts.robot])); game.me.player = true;
     game.robots.push(game.me);
     for (let s = 0; s < opts.size; s++) {
-      if (s > 0) game.robots.push(makeRobot(pick('blue'), 'blue', s, false, 2.6, zs[s]));
-      game.robots.push(makeRobot(pick('red'), 'red', s, false, L - 2.6, W - zs[s]));
+      if (s > 0) { const t = pick('blue'); game.robots.push(makeRobot(t, 'blue', s, false, LINE - t.size / 2, zs[s])); }
+      const t = pick('red'); game.robots.push(makeRobot(t, 'red', s, false, L - LINE + t.size / 2, W - zs[s]));
     }
   }
   for (const r of game.robots) collideField(r);
@@ -1677,6 +1678,7 @@ function drawPicker() {
   $('stats').innerHTML = bar('Speed', t.speed / 5, t.speed.toFixed(1)) + bar('Acceleration', t.accel / 15, t.accel) + bar('Hopper', t.cap / 55, t.cap) +
     bar('Fire rate', t.rate / 12, t.rate + '/s') + bar('Accuracy', (t.acc - 0.75) / 0.25, Math.round(t.acc * 100) + '%') + bar('Climb', t.climb / 3, 'L' + t.climb) +
     bar('Weight', t.mass / 2, t.mass.toFixed(1)) + `<p class="note" style="margin:10px 0 0">${t.tall ? 'Too tall for the trenches — crosses over the bumps.' : 'Fits under the trenches.'}${t.blocker ? ' Intake stows and a shot blocker deploys.' : ''}${t.sotm ? ' Shoots on the move.' : ''}${t.shuttle ? ' No shooter — ejects fuel out of the intake.' : ''}</p>`;
+  [opts.sx, opts.sz] = startSpot(opts.sx, opts.sz, t);       // a different robot may not fit where the last one stood
   drawMap();
 }
 function drawMap() {
@@ -1690,12 +1692,21 @@ function drawMap() {
   g.fillStyle = '#ffb300'; g.fillRect((opts.sx - t.size / 2) * k, (opts.sz - t.size / 2) * k, t.size * k, t.size * k);
   g.fillStyle = '#14110a'; g.beginPath(); g.moveTo((opts.sx + t.size / 2) * k, opts.sz * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz - 0.2) * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz + 0.2) * k); g.fill();
 }
+// A robot starts with its front bumper on its starting line. One that fits under a trench may also
+// start past the line, as long as it is under the trench.
+function startSpot(x, z, t) {
+  const half = t.size / 2, onLine = LINE - half, lo = TRENCH_IN + half + 0.03, hi = MZ - half - 0.05;
+  z = clamp(z, half + 0.05, W - half - 0.05);
+  if (!t.tall && lo <= hi && x > onLine + 0.05 && Math.abs(z - MZ) > TRENCH_IN - 0.25) {
+    const s = z < MZ ? -1 : 1;
+    return [clamp(x, onLine, LINE + TRENCH_D - half), MZ + s * clamp(Math.abs(z - MZ), lo, hi)];
+  }
+  return [onLine, z];
+}
 function placeStart(e) {
   const c = $('startmap'), b = c.getBoundingClientRect(), k = b.height / W;
   let x = (e.clientX - b.left) / k, z = (e.clientY - b.top) / k;
-  x = clamp(x, 0.6, LINE - 0.5); z = clamp(z, 0.6, W - 0.6);
-  if (Math.abs(z - MZ - TOWER_Z) < 1.2) x = Math.max(x, TOWER_D + 0.6);          // keep clear of the tower
-  opts.sx = x; opts.sz = z; save('ra.opts', opts); drawMap();
+  [opts.sx, opts.sz] = startSpot(x, z, ROBOTS[opts.robot]); save('ra.opts', opts); drawMap();
 }
 $('startmap').addEventListener('pointerdown', e => { e.target.setPointerCapture(e.pointerId); placeStart(e); });
 $('startmap').addEventListener('pointermove', e => { if (e.buttons) placeStart(e); });
