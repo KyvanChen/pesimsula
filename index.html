@@ -238,7 +238,8 @@ const DEPOT_W = 42 * IN, DEPOT_D = 27 * IN, DEPOT_OFF = -1.93, CHUTE_Z = MZ + 3.
 const towerZ = alliance => alliance === 'blue' ? MZ + TOWER_Z : MZ - TOWER_Z;
 const BALL_R = 5.91 * IN / 2, FUEL = 504, PRELOAD = 8;
 const STEP = 1 / 60, G = 9.81;
-const MAX_ROLL = 6.0, MAX_HOP = 1.5;         // fastest a ball on the carpet may be shoved, and how hard it may pop up
+const ROLL_DAMP = 0.6;                      // how quickly loose fuel loses speed
+const MAX_ROLL = 5.5, MAX_HOP = 0.9;         // fastest a ball on the carpet may be shoved, and how hard it may pop up
 const HUBS = { blue: { x: HUBX, z: MZ }, red: { x: L - HUBX, z: MZ } };
 const BUMP_LANES = [MZ - (HUB / 2 + BUMP_W / 2), MZ + (HUB / 2 + BUMP_W / 2)];
 const ALL_LANES = [MZ - (TRENCH_IN + TRENCH_W / 2), ...BUMP_LANES, MZ + (TRENCH_IN + TRENCH_W / 2)];
@@ -246,6 +247,7 @@ const BAND = 1.0;
 
 // Match rules
 const PHASES = [['AUTO', 20], ['TRANSITION', 10], ['SHIFT 1', 25], ['SHIFT 2', 25], ['SHIFT 3', 25], ['SHIFT 4', 25], ['END GAME', 30]];
+const AUTO_PAUSE = 3;                      // seconds every robot is disabled between AUTO and the rest of the match, as on a real field
 const MATCH_T = PHASES.reduce((a, p) => a + p[1], 0);
 const CLIMB_PTS = [0, 10, 20, 30], CLIMB_TIMES = [1.2, 3.0, 5.0], CLIMB_Y = [0, 0.35, 0.8, 1.25];
 const FOUL_PTS = 5, PIN_LIMIT = 3.0;
@@ -846,8 +848,8 @@ ballMesh.frustumCulled = false; ballMesh.castShadow = true;
 const returning = [];
 function buildBalls() {
   for (let i = 0; i < FUEL; i++) {
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, -50, 0).setLinearDamping(0.35).setAngularDamping(0.6).setCcdEnabled(true));
-    world.createCollider(RAPIER.ColliderDesc.ball(BALL_R).setRestitution(0.45).setFriction(0.7).setDensity(120), body);
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, -50, 0).setLinearDamping(ROLL_DAMP).setAngularDamping(0.6).setCcdEnabled(true));
+    world.createCollider(RAPIER.ColliderDesc.ball(BALL_R).setRestitution(0.22).setFriction(0.7).setDensity(120), body);
     body.setEnabled(false);
     balls.push({ body, on: false, shooter: null });
   }
@@ -861,7 +863,7 @@ function putBall(i, x, y, z, vx = 0, vy = 0, vz = 0) {
   b.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
   b.on = true;
 }
-function takeBall(i) { const b = balls[i]; b.on = false; b.shooter = null; if (b.flying) { b.flying = false; b.body.setLinearDamping(0.35); } b.body.setEnabled(false); }
+function takeBall(i) { const b = balls[i]; b.on = false; b.shooter = null; if (b.flying) { b.flying = false; b.body.setLinearDamping(ROLL_DAMP); } b.body.setEnabled(false); }
 
 function stageFuel() {
   returning.length = 0;
@@ -892,7 +894,7 @@ function readBalls() {
     if (t.y < -1 || t.x < -1 || t.x > L + 1 || t.z < -1 || t.z > W + 1) {     // left the field: handed back at mid-field
       putBall(i, MX + (Math.random() - 0.5) * 2, 0.6, MZ + (Math.random() - 0.5) * 4); b.shooter = null; continue;
     }
-    if (b.flying && t.y < 0.25) { b.flying = false; b.body.setLinearDamping(0.35); }
+    if (b.flying && t.y < 0.25) { b.flying = false; b.body.setLinearDamping(ROLL_DAMP); }
     pos[i * 3] = t.x; pos[i * 3 + 1] = t.y; pos[i * 3 + 2] = t.z;
   }
 }
@@ -1034,7 +1036,8 @@ function stepHoppers(dt, spill) {      // spill: fuel that tops the walls leaves
           const c = hold[m] * 3, dx = hp[c] - hp[a], dy = hp[c + 1] - hp[a + 1], dz = hp[c + 2] - hp[a + 2], d2 = dx * dx + dy * dy + dz * dz;
           if (d2 >= D * D) continue;
           const d = Math.sqrt(d2), fa = feeding[hold[k]] > 0, fc = feeding[hold[m]] > 0;
-          const pa = (D - d) * (fa === fc ? 0.5 : fa ? 0 : 1), pc = D - d - pa;      // fuel in the rollers does not give way
+          const gap = fa || fc ? D - d : Math.min(D - d, 0.006);                   // loose fuel eases apart instead of popping
+          const pa = gap * (fa === fc ? 0.5 : fa ? 0 : 1), pc = gap - pa;      // fuel in the rollers does not give way
           const nx = d > 1e-5 ? dx / d : 0, ny = d > 1e-5 ? dy / d : 1, nz = d > 1e-5 ? dz / d : 0;
           hp[a] -= nx * pa; hp[a + 1] -= ny * pa; hp[a + 2] -= nz * pa; hp[c] += nx * pc; hp[c + 1] += ny * pc; hp[c + 2] += nz * pc;
         }
@@ -1048,7 +1051,8 @@ function stepHoppers(dt, spill) {      // spill: fuel that tops the walls leaves
     }
     for (let k = n - 1; k >= 0; k--) {
       const i = hold[k], a = i * 3;
-      for (let j = 0; j < 3; j++) hv[a + j] = clamp((hp[a + j] - from[k * 3 + j]) / dt, -2.5, 2.5);
+      for (let j = 0; j < 3; j++) hv[a + j] = clamp((hp[a + j] - from[k * 3 + j]) / dt, -2.5, j === 1 ? 0.8 : 1.6);
+      hv[a] = Math.max(hv[a], -1.6); hv[a + 2] = Math.max(hv[a + 2], -1.6);
       if (feeding[i] > 0) continue;
       const out = hp[a] < x0 - BALL_R ? [-1, 0] : hp[a] > x1 + BALL_R ? [1, 0] : hp[a + 2] < z0 - BALL_R ? [0, -1] : hp[a + 2] > z1 + BALL_R ? [0, 1] : null;
       if (!out || !spill || !open) { if (out) { hp[a] = clamp(hp[a], x0 - BALL_R, x1 + BALL_R); hp[a + 2] = clamp(hp[a + 2], z0 - BALL_R, z1 + BALL_R); } continue; }
@@ -1421,7 +1425,7 @@ function summary() {
 function newGame(roster, mode) {
   game.robots.forEach(removeRobot);
   game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = mode || opts.mode; game.skill = opts.skill;
-  game.bricked = false; game.brickAt = 0; game.second = 0; setBrickLook(false);
+  game.bricked = false; game.brickAt = 0; game.second = 0; game.hold = 0; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
   const zs = [MZ - 1.55, MZ + 1.55, MZ];      // in line with the bumps, clear of the trench risers
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
@@ -1455,13 +1459,19 @@ function brick() {                    // the robot dies on the spot; the match c
 function tick() {
   game.second += STEP;
   if (game.second >= 1) { game.second -= 1; if (opts.brick && !net.role && Math.random() < (game.me.type.brick ?? BRICK_CHANCE)) brick(); }
-  const dt = STEP, wasAuto = game.mode === 'match' && phaseIndex() === 0, before = phaseIndex();
-  game.t += dt;
-  if (game.mode === 'match') {
-    if (wasAuto && phaseIndex() !== 0) {
+  const dt = STEP, before = phaseIndex();
+  if (game.hold > 0) {                  // the pause after AUTO: the clock waits, fuel still in the air counts for AUTO
+    game.hold -= dt;
+    if (game.hold <= 0) {
+      game.hold = 0; game.t = PHASES[0][1];
       const b = game.score.blue.auto, r = game.score.red.auto;
       game.firstOff = b > r ? 'blue' : r > b ? 'red' : (Math.random() < 0.5 ? 'blue' : 'red');
     }
+  } else {
+    game.t += dt;
+    if (game.mode === 'match' && before === 0 && phaseIndex() !== 0) { game.t = PHASES[0][1] - 1e-4; game.hold = AUTO_PAUSE; toast('AUTO OVER — ROBOTS DISABLED'); }
+  }
+  if (game.mode === 'match') {
     if (phaseIndex() !== before) toast(PHASES[phaseIndex()][0] + (hubActive(game.me.alliance) ? '' : ' — YOUR HUB IS OFF'));
     if (game.t >= MATCH_T) { game.t = MATCH_T; finish(); return; }
   }
@@ -1469,7 +1479,8 @@ function tick() {
   const sk = SKILLS[game.skill];
   for (const r of game.robots) {
     if (r.human) readHuman(r); else if (r.remote) readRemote(r); else think(r, dt);
-    if (r.type.fixed && !r.type.shuttle) autoAlign(r);
+    if (game.hold > 0) { Object.assign(r.cmd, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); if (r.type.shuttle) r.blockOn = false; }      // disabled
+    else if (r.type.fixed && !r.type.shuttle) autoAlign(r);
     r.pinning = false;
     runClimb(r, dt);
     moveRobot(r, dt);
@@ -1525,8 +1536,9 @@ function tick() {
   }
   for (let k = returning.length - 1; k >= 0; k--) {
     const e = returning[k]; e[0] -= dt; if (e[0] > 0) continue;
-    const h = HUBS[e[1]], out = e[1] === 'blue' ? 1 : -1, off = [-0.42, -0.14, 0.14, 0.42][e[2] % 4];
-    putBall(e[2], h.x + out * (HUB / 2 + 0.14), 0.12, h.z + off, out * 1.6, 0, off * 0.8);
+    // out of one of the four exits, each fuel at its own speed and angle so they scatter instead of queueing
+    const h = HUBS[e[1]], out = e[1] === 'blue' ? 1 : -1, rnd = Math.random, off = [-0.42, -0.14, 0.14, 0.42][Math.floor(rnd() * 4)] + (rnd() - 0.5) * 0.1;
+    putBall(e[2], h.x + out * (HUB / 2 + 0.14), 0.12 + rnd() * 0.06, h.z + off, out * (0.9 + rnd() * 1.5), rnd() * 0.5, off * 0.8 + (rnd() - 0.5) * 1.8);
     returning.splice(k, 1);
   }
   if (net.role === 'host' && ++net.ticks % 3 === 0) sendSnapshot();     // 20 snapshots a second
@@ -1606,7 +1618,7 @@ function drawHud() {
   const s = summary(), me = game.me;
   $('sb').textContent = s.blue.total; $('sr').textContent = s.red.total;
   if (game.mode === 'free') { $('clock').textContent = '∞'; $('phase').textContent = 'FREE PLAY'; }
-  else { const left = Math.ceil(MATCH_T - game.t); $('clock').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; $('phase').textContent = PHASES[phaseIndex()][0]; }
+  else { const left = Math.ceil(MATCH_T - game.t); $('clock').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; $('phase').textContent = game.hold > 0 ? 'AUTO OVER' : PHASES[phaseIndex()][0]; }
   for (const [id, a] of [['hb', 'blue'], ['hr', 'red']]) { const on = hubActive(a); $(id).textContent = on ? 'HUB ACTIVE' : 'HUB OFF'; $(id).className = on ? 'hubon' : 'huboff'; }
   $('fuelbar').style.width = `${Math.min(100, 100 * me.hold.length / me.type.cap)}%`;
   $('fueltxt').textContent = me.type.overflow ? `Fuel ${me.hold.length}` + (me.hold.length > me.type.cap ? ' — OVERFLOWING' : '')
