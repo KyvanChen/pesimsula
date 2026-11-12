@@ -1,0 +1,1215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rebuild Arena</title>
+<style>
+  :root { --bg:#0c1016; --panel:#141b26; --line:#263244; --text:#eef2f7; --dim:#8c9bb0;
+          --amber:#ffb300; --blue:#3d86ff; --red:#ff3d5a; --ok:#4cd07d; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+               font-family: "Segoe UI", system-ui, sans-serif; overflow:hidden; user-select:none; }
+  canvas#view { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+            background:rgba(8,11,16,.82); z-index:10; padding:16px; overflow:auto; }
+  .screen.on { display:flex; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:26px 30px;
+          width:min(960px, 100%); box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  .card.narrow { width:min(520px, 100%); }
+  h1 { margin:0 0 4px; font-size:34px; letter-spacing:.06em; }
+  h1 span { color:var(--amber); }
+  h2 { margin:0 0 14px; font-size:20px; letter-spacing:.08em; color:var(--amber); text-transform:uppercase; }
+  p.sub { margin:0 0 20px; color:var(--dim); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; align-items:center; }
+  .row > label { width:150px; color:var(--dim); font-size:14px; }
+  button { font:inherit; color:var(--text); background:#1c2636; border:1px solid var(--line);
+           border-radius:8px; padding:9px 16px; cursor:pointer; }
+  button:hover { border-color:var(--amber); }
+  button.sel { background:var(--amber); color:#14110a; border-color:var(--amber); font-weight:600; }
+  button.go { background:var(--amber); color:#14110a; border-color:var(--amber); font-weight:700;
+              padding:12px 28px; font-size:16px; }
+  .foot { display:flex; justify-content:space-between; gap:10px; margin-top:20px; flex-wrap:wrap; }
+  .note { color:var(--dim); font-size:13px; }
+
+  .picker { display:grid; grid-template-columns: 200px 1fr 230px; gap:20px; }
+  @media (max-width: 860px) { .picker { grid-template-columns: 1fr; } }
+  .bots { display:flex; flex-direction:column; gap:8px; }
+  .bots button { text-align:left; }
+  .bots small { display:block; color:var(--dim); font-size:12px; }
+  .bots button.sel small { color:#3b2f10; }
+  #preview { width:100%; height:230px; border-radius:10px; background:#0d131c; border:1px solid var(--line); display:block; }
+  .stat { display:grid; grid-template-columns: 86px 1fr 46px; gap:8px; align-items:center; font-size:13px; margin-top:7px; }
+  .stat .bar { height:8px; background:#0d131c; border-radius:4px; overflow:hidden; }
+  .stat .bar i { display:block; height:100%; background:var(--amber); }
+  .stat b { text-align:right; font-weight:600; font-variant-numeric: tabular-nums; }
+  #bio { color:var(--dim); font-size:14px; margin:10px 0 0; min-height:40px; }
+  #startmap { width:100%; border-radius:10px; background:#0d131c; border:1px solid var(--line); cursor:grab; touch-action:none; display:block; }
+
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:5; display:none; }
+  #hud.on { display:block; }
+  #board { position:absolute; top:12px; left:50%; transform:translateX(-50%); display:flex; align-items:stretch;
+           background:rgba(12,16,22,.86); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  #board .side { padding:6px 22px; min-width:128px; text-align:center; }
+  #board .side b { display:block; font-size:38px; line-height:1; font-variant-numeric: tabular-nums; }
+  #board .side small { font-size:11px; letter-spacing:.1em; }
+  #board .blue b { color:var(--blue); } #board .red b { color:var(--red); }
+  #board .mid { padding:6px 22px; text-align:center; border-left:1px solid var(--line); border-right:1px solid var(--line); }
+  #board .mid b { display:block; font-size:32px; line-height:1.05; font-variant-numeric: tabular-nums; }
+  #board .mid small { color:var(--amber); font-size:12px; letter-spacing:.1em; }
+  .hubon { color:var(--ok); } .huboff { color:var(--red); }
+  #me { position:absolute; left:14px; bottom:14px; background:rgba(12,16,22,.86); border:1px solid var(--line);
+        border-radius:12px; padding:12px 16px; min-width:250px; }
+  #me .name { font-weight:700; letter-spacing:.06em; }
+  #me .fuel { height:10px; background:#0d131c; border-radius:5px; overflow:hidden; margin:8px 0 6px; }
+  #me .fuel i { display:block; height:100%; background:var(--amber); width:0; }
+  #me div { font-size:14px; }
+  #status { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); font-size:18px; font-weight:700;
+            letter-spacing:.06em; text-shadow:0 2px 8px #000; text-align:center; }
+  #keys { position:absolute; right:14px; bottom:14px; background:rgba(12,16,22,.7); border:1px solid var(--line);
+          border-radius:12px; padding:10px 14px; font-size:12px; color:var(--dim); line-height:1.6; }
+  #toast { position:absolute; top:96px; left:50%; transform:translateX(-50%); font-size:22px; font-weight:800;
+           letter-spacing:.08em; color:var(--amber); text-shadow:0 2px 10px #000; opacity:0; transition:opacity .3s; }
+  table { border-collapse:collapse; width:100%; font-variant-numeric: tabular-nums; }
+  td, th { padding:6px 10px; text-align:right; border-bottom:1px solid var(--line); font-size:15px; }
+  td:first-child, th:first-child { text-align:left; color:var(--dim); }
+  th.b { color:var(--blue); } th.r { color:var(--red); }
+  tr.total td { font-weight:800; font-size:18px; color:var(--text); }
+  #binds { display:grid; grid-template-columns: 1fr 1fr; gap:6px 16px; }
+  #binds div { display:flex; justify-content:space-between; align-items:center; font-size:14px; color:var(--dim); }
+  #binds button { padding:5px 10px; min-width:110px; font-size:13px; }
+  canvas#view.bricked { filter: grayscale(1) contrast(1.15) brightness(.8); transition: filter .6s; }
+  #brick { position:fixed; left:0; right:0; top:50%; transform:translateY(-50%); z-index:8; display:none; text-align:center;
+           padding:18px 0 20px; background:linear-gradient(90deg, transparent, rgba(0,0,0,.72) 25%, rgba(0,0,0,.72) 75%, transparent); pointer-events:none; }
+  #brick.on { display:block; animation: brickin .5s ease-out; }
+  #brick b { display:block; font-size:clamp(46px, 10vw, 120px); line-height:1; letter-spacing:.14em; color:#d8262f; font-weight:900;
+             text-shadow:0 0 22px rgba(216,38,47,.55), 0 4px 0 #000; }
+  #brick small { color:#c9d1dc; letter-spacing:.3em; text-transform:uppercase; font-size:13px; }
+  @keyframes brickin { from { opacity:0; transform:translateY(-50%) scale(1.25); } to { opacity:1; transform:translateY(-50%) scale(1); } }
+  #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20;
+             background:var(--bg); font-size:18px; color:var(--dim); text-align:center; padding:20px; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "rapier": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="brick"><b>BRICKED</b><small>your robot died on the field</small></div>
+<div id="loading">Loading physics and graphics…</div>
+
+<div id="hud">
+  <div id="board">
+    <div class="side blue"><small>BLUE</small><b id="sb">0</b><small id="hb" class="hubon">HUB ACTIVE</small></div>
+    <div class="mid"><b id="clock">2:40</b><small id="phase">AUTO</small></div>
+    <div class="side red"><small>RED</small><b id="sr">0</b><small id="hr" class="hubon">HUB ACTIVE</small></div>
+  </div>
+  <div id="toast"></div>
+  <div id="me">
+    <div class="name" id="mename">ROBOT</div>
+    <div class="fuel"><i id="fuelbar"></i></div>
+    <div id="fueltxt">Fuel 0/0</div>
+    <div id="shooter" class="note">—</div>
+    <div id="camtxt" class="note">—</div>
+  </div>
+  <div id="status"></div>
+  <div id="keys"></div>
+</div>
+
+<div class="screen" id="menu">
+  <div class="card narrow">
+    <h1>REBUILD <span>ARENA</span></h1>
+    <p class="sub">A 3D driving simulator for the 2026 FRC game. Fan-made; not affiliated with FIRST.</p>
+    <div class="row"><label>Mode</label><span id="optMode"></span></div>
+    <div class="row"><label>Other robots</label><span id="optSize"></span></div>
+    <div class="row"><label>AI skill</label><span id="optSkill"></span></div>
+    <div class="row"><label>Random bricking</label><span id="optBrick"></span></div>
+    <div class="foot">
+      <button id="btnSettings">Settings</button>
+      <button class="go" id="btnPick">Choose robot</button>
+    </div>
+    <p class="note" id="best" style="margin:16px 0 0"></p>
+  </div>
+</div>
+
+<div class="screen" id="picker">
+  <div class="card">
+    <h2>Choose your robot</h2>
+    <div class="picker">
+      <div class="bots" id="bots"></div>
+      <div>
+        <canvas id="preview"></canvas>
+        <p id="bio"></p>
+        <div id="stats"></div>
+      </div>
+      <div>
+        <div class="note" style="margin-bottom:6px">Drag your robot to its starting spot</div>
+        <canvas id="startmap" width="230" height="300"></canvas>
+        <div class="note" style="margin-top:6px">Left edge is your alliance wall.</div>
+      </div>
+    </div>
+    <div class="foot">
+      <button id="btnBack">Back</button>
+      <button class="go" id="btnStart">Start</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="settings">
+  <div class="card narrow">
+    <h2>Settings</h2>
+    <div class="row"><label>Graphics</label><span id="optQuality"></span></div>
+    <div class="row"><label>FPS cap</label><span id="optFps"></span></div>
+    <h2 style="margin-top:18px">Keys <span class="note" style="text-transform:none;letter-spacing:0">— click one, then press a key</span></h2>
+    <div id="binds"></div>
+    <p class="note" style="margin:14px 0 0">Controller: left stick drive, right stick turn, LB intake, RT shoot, A climb, Y camera, Start pause.</p>
+    <div class="foot"><button id="btnResetKeys">Reset keys</button><button class="go" id="btnSettingsDone">Done</button></div>
+  </div>
+</div>
+
+<div class="screen" id="pause">
+  <div class="card narrow">
+    <h2>Paused</h2>
+    <div class="foot" style="justify-content:flex-start">
+      <button class="go" id="btnResume">Resume</button>
+      <button id="btnRestart">Restart</button>
+      <button id="btnPauseSettings">Settings</button>
+      <button id="btnQuit">Quit to menu</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="results">
+  <div class="card narrow">
+    <h2 id="resTitle">Match over</h2>
+    <table id="resTable"></table>
+    <p class="note" id="resExtra" style="margin:14px 0 0"></p>
+    <div class="foot"><button id="btnMenu">Menu</button><button class="go" id="btnAgain">Play again</button></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import RAPIER from 'rapier';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ============================================================
+// FIELD DIMENSIONS (2026 game manual, metres). X runs wall to wall, Z across.
+// ============================================================
+const IN = 0.0254, L = 651.2 * IN, W = 317.7 * IN, MX = L / 2, MZ = W / 2;
+const LINE = 158.6 * IN, HUB = 47 * IN, HUB_H = 72 * IN;
+const BUMP_W = 73 * IN, BUMP_D = 44.4 * IN, BUMP_H = 6.513 * IN;
+const TRENCH_D = 47 * IN, TRENCH_CLEAR = 22.25 * IN, TRENCH_H = 40.25 * IN;
+// Positions below are measured from the official field CAD (FE-2026 Playing Field).
+const HUBX = LINE + HUB / 2;                    // hub, bumps and trenches sit just past the zone line
+const BUMP_OUT = HUB / 2 + BUMP_W, RISER = 0.30;   // a 12in trench riser stands between bump and trench
+const TRENCH_IN = BUMP_OUT + RISER, TRENCH_W = MZ - TRENCH_IN;
+const TOWER_D = 45 * IN, UP_GAP = 32.25 * IN, UP_W = 3.5 * IN, RUNGS = [27 * IN, 45 * IN, 63 * IN];
+const TOWER_Z = 0.289, TOWER_UPX = 1.06;        // the tower is off-centre along the wall
+const DEPOT_W = 42 * IN, DEPOT_D = 27 * IN, DEPOT_OFF = -1.93, CHUTE_Z = MZ + 3.37;
+const towerZ = alliance => alliance === 'blue' ? MZ + TOWER_Z : MZ - TOWER_Z;
+const BALL_R = 5.91 * IN / 2, FUEL = 504, PRELOAD = 8;
+const STEP = 1 / 60, G = 9.81;
+const MAX_ROLL = 6.0, MAX_HOP = 1.5;         // fastest a ball on the carpet may be shoved, and how hard it may pop up
+const HUBS = { blue: { x: HUBX, z: MZ }, red: { x: L - HUBX, z: MZ } };
+const BUMP_LANES = [MZ - (HUB / 2 + BUMP_W / 2), MZ + (HUB / 2 + BUMP_W / 2)];
+const ALL_LANES = [MZ - (TRENCH_IN + TRENCH_W / 2), ...BUMP_LANES, MZ + (TRENCH_IN + TRENCH_W / 2)];
+const BAND = 1.0;
+
+// Match rules
+const PHASES = [['AUTO', 20], ['TRANSITION', 10], ['SHIFT 1', 25], ['SHIFT 2', 25], ['SHIFT 3', 25], ['SHIFT 4', 25], ['END GAME', 30]];
+const MATCH_T = PHASES.reduce((a, p) => a + p[1], 0);
+const CLIMB_PTS = [0, 10, 20, 30], CLIMB_TIMES = [1.2, 3.0, 5.0], CLIMB_Y = [0, 0.35, 0.8, 1.25];
+const FOUL_PTS = 5, PIN_LIMIT = 3.0;
+const BRICK_CHANCE = 0.0001, BRICK_SLOWMO = 0.22, BRICK_SECONDS = 3.5;   // per-second odds your robot dies, then the slow-mo ending
+const RP = { energized: 100, supercharged: 360, traversal: 50 };
+const COL = { blue: 0x3d86ff, red: 0xff3d5a };
+
+// Original robots -- generic archetypes, not modelled on any real team.
+const ROBOTS = [
+  { id: 'vector', name: 'Vector', tag: 'Trench runner', color: 0x38d6c4, size: 0.70, speed: 5.0, accel: 13, turn: 7.5, cap: 18, rate: 9, acc: 0.90, tall: false, climb: 1, mass: 1.0,
+    bio: 'Low, light and quick. Slips under the trenches and wins the race to loose fuel, but empties its small hopper fast.' },
+  { id: 'atlas', name: 'Atlas', tag: 'Bulk hauler', color: 0xff9d2e, size: 0.82, speed: 4.0, accel: 9, turn: 5.5, cap: 55, rate: 7, acc: 0.86, tall: true, climb: 2, mass: 1.4,
+    bio: 'A towering hopper on wheels. Too tall for the trenches, so it grinds over the bumps and unloads fifty at a time.' },
+  { id: 'needle', name: 'Needle', tag: 'Turret sniper', color: 0xc77dff, size: 0.72, speed: 4.4, accel: 11, turn: 6.5, cap: 28, rate: 12, acc: 0.97, tall: false, climb: 1, mass: 1.0,
+    bio: 'A fast-feeding turret that rarely misses, even on the move. Average everywhere else.' },
+  { id: 'summit', name: 'Summit', tag: 'Climb specialist', color: 0x7ee05a, size: 0.74, speed: 4.2, accel: 11, turn: 6.0, cap: 24, rate: 6, acc: 0.86, tall: false, climb: 3, mass: 1.1,
+    bio: 'Built around its climber. A steady cycler that banks thirty tower points at the end of every match.' },
+  { id: 'ember', name: 'Ember', tag: 'All-rounder', color: 0xff5d8f, size: 0.76, speed: 4.6, accel: 12, turn: 6.5, cap: 32, rate: 8, acc: 0.92, tall: false, climb: 2, mass: 1.15,
+    bio: 'No weaknesses and no party tricks. A good first robot for learning the field.' },
+  { id: 'bastion', name: 'Bastion', tag: 'Heavy defender', color: 0x9fb4cc, size: 0.84, speed: 3.8, accel: 15, turn: 5.5, cap: 20, rate: 5, acc: 0.82, tall: true, climb: 1, mass: 2.0,
+    bio: 'Heavy, grippy and hard to move. Wins every shoving match; mind the pin timer.' },
+  // Built from the team's own CAD (tools/build_robot.py). Stats are estimates, not measured.
+  { id: 'calgames', name: 'Cal Games', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
+    model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true,
+    // Fuel sits low at the front, over the rollers and out into the intake; it shuffles back when the intake stows.
+    hopper: { x: [0.0, 0.62], z: [-0.31, 0.31], y: 0.19, wall: 0.47, walls: [-0.02, 0.36], stowBack: 0.25 },
+    bio: 'A turret that tracks the target and shoots on the move, over a wide roller intake. The intake stows on its four-bar, then the shot blocker swings level. No climber.' },
+];
+const SKILLS = [
+  { name: 'Rookie', speed: 0.45, acc: 0.6, rate: 0.35, replan: 0.6, fill: 0.9 },
+  { name: 'Regional', speed: 0.65, acc: 0.85, rate: 0.55, replan: 0.4, fill: 0.7 },
+  { name: 'Worlds', speed: 0.9, acc: 1.0, rate: 0.85, replan: 0.2, fill: 0.6 },
+];
+
+// ============================================================
+// SETTINGS (saved in the browser)
+// ============================================================
+const DEFAULT_KEYS = { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', turnLeft: 'ArrowLeft', turnRight: 'ArrowRight',
+  intake: 'ShiftLeft', shoot: 'Space', climb: 'KeyC', blocker: 'KeyB', camera: 'KeyV', relative: 'KeyF', hideHud: 'KeyH', reset: 'KeyR' };
+const KEY_LABELS = { forward: 'Drive forward', back: 'Drive back', left: 'Strafe left', right: 'Strafe right', turnLeft: 'Turn left', turnRight: 'Turn right',
+  intake: 'Intake (hold)', shoot: 'Shoot / pass (hold)', climb: 'Climb (hold)', blocker: 'Stow intake + shot blocker', camera: 'Change camera', relative: 'Field / robot relative', hideHud: 'Hide HUD', reset: 'Reset field (free play)' };
+function load(key, fallback) { try { return Object.assign({}, fallback, JSON.parse(localStorage.getItem(key) || '{}')); } catch { return { ...fallback }; } }
+function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window */ } }
+const keys = load('ra.keys', DEFAULT_KEYS);
+const opts = load('ra.opts', { quality: 1, fps: 0, mode: 'match', size: 1, skill: 1, robot: 0, sx: 2.6, sz: MZ - 2.3, brick: true });
+const best = load('ra.best', {});
+
+// ============================================================
+// HELPERS
+// ============================================================
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const wrap = a => { a = (a + Math.PI) % (2 * Math.PI); return (a < 0 ? a + 2 * Math.PI : a) - Math.PI; };
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 0.5;
+const wallX = (alliance, d) => alliance === 'blue' ? d : L - d;
+const mirror = (alliance, x, z) => alliance === 'blue' ? [x, z] : [L - x, W - z];
+const inZone = r => r.alliance === 'blue' ? r.x < LINE : r.x > L - LINE;
+const underTrench = (x, z) => Math.min(Math.abs(x - HUBX), Math.abs(x - (L - HUBX))) < TRENCH_D / 2 + 0.1 && Math.abs(z - MZ) > TRENCH_IN - 0.1;
+function bumpAt(x, z) {            // [height, slope] of the carpet under a point
+  const dz = Math.abs(z - MZ);
+  if (dz < HUB / 2 || dz > BUMP_OUT) return [0, 0];
+  for (const lx of [HUBX, L - HUBX]) {
+    const dx = x - lx;
+    if (Math.abs(dx) < BUMP_D / 2) return [BUMP_H * (1 - Math.abs(dx) / (BUMP_D / 2)), -Math.sign(dx) * BUMP_H / (BUMP_D / 2)];
+  }
+  return [0, 0];
+}
+
+// Things a robot cannot drive through (2D boxes). Trenches only stop tall robots.
+const OBSTACLES = [];
+for (const a of ['blue', 'red']) {
+  const add = (x, z, hx, hz, kind) => { const [mx, mz] = mirror(a, x, z); OBSTACLES.push({ x: mx, z: mz, hx, hz, kind }); };
+  add(HUBX, MZ, HUB / 2, HUB / 2, 'solid');
+  for (const s of [-1, 1]) {
+    add(HUBX, MZ + s * (TRENCH_IN + TRENCH_W / 2), TRENCH_D / 2, TRENCH_W / 2, 'overhead');
+    add(HUBX, MZ + s * (BUMP_OUT + RISER / 2), TRENCH_D / 2, RISER / 2, 'solid');
+    add(TOWER_UPX, MZ + TOWER_Z + s * (UP_GAP + UP_W) / 2, UP_W / 2, UP_W / 2, 'solid');
+  }
+}
+
+// ============================================================
+// RENDERER & SCENE
+// ============================================================
+const renderer = new THREE.WebGLRenderer({ canvas: $('view'), antialias: true });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x18202c);
+scene.fog = new THREE.Fog(0x18202c, 35, 80);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 200);
+const hemi = new THREE.HemisphereLight(0xeaf1ff, 0x3a4658, 2.6);
+const sun = new THREE.DirectionalLight(0xffffff, 2.8);
+sun.position.set(MX - 6, 16, MZ + 7); sun.target.position.set(MX, 0, MZ);
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 8, bottom: -8, near: 1, far: 40 });
+scene.add(hemi, sun, sun.target);
+
+function applyQuality() {
+  const q = opts.quality;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, [1, 1.5, 2][q]));
+  renderer.shadowMap.enabled = q === 2;
+  sun.castShadow = q === 2;
+  scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
+  resize();
+}
+function resize() {
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05, ...extra });
+const proc = new THREE.Group(); scene.add(proc);      // hand-built field, shown only if field.glb is missing
+let boxParent = scene;
+function box(w, h, d, material, x, y, z, parent = boxParent) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+  m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
+}
+
+// ============================================================
+// PHYSICS WORLD
+// ============================================================
+await RAPIER.init();
+const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
+world.timestep = STEP;
+world.numSolverIterations = 10;
+function fixedBox(hx, hy, hz, x, y, z, rest = 0.4) {
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setRestitution(rest).setFriction(0.8), body);
+}
+
+const hubLights = {};
+function buildField() {
+  boxParent = proc;
+  // carpet, surround and markings
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), mat(0x1d2632));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(MX, -0.01, MZ); floor.receiveShadow = true; scene.add(floor);
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(L, W), mat(0x46505e, { roughness: 0.95 }));
+  carpet.rotation.x = -Math.PI / 2; carpet.position.set(MX, 0, MZ); carpet.receiveShadow = true; proc.add(carpet);
+  const flat = (w, d, color, x, z, opacity = 1) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity }));
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.004, z); proc.add(m);
+  };
+  flat(LINE, W, COL.blue, LINE / 2, MZ, 0.13); flat(LINE, W, COL.red, L - LINE / 2, MZ, 0.13);
+  flat(0.05, W, 0xe8eef7, MX, MZ);
+  fixedBox(L / 2 + 3, 0.5, W / 2 + 3, MX, -0.5, MZ, 0.5);
+
+  // guardrails and alliance walls
+  const glass = c => new THREE.MeshStandardMaterial({ color: c, transparent: true, opacity: 0.13, roughness: 0.2, depthWrite: false });
+  for (const s of [0, 1]) {
+    const z = s ? W + 0.05 : -0.05, x = s ? L + 0.05 : -0.05;
+    box(L + 0.2, 0.51, 0.1, glass(0xc9d4e3), MX, 0.255, z).castShadow = false;
+    fixedBox(L / 2 + 0.1, 0.255, 0.05, MX, 0.255, z);
+    box(0.1, 1.98, W + 0.2, glass(s ? COL.red : COL.blue), x, 0.99, MZ).castShadow = false;
+    fixedBox(0.05, 0.99, W / 2 + 0.1, x, 0.99, MZ);
+  }
+
+  for (const a of ['blue', 'red']) {
+    const at = (x, z) => mirror(a, x, z);
+    const tint = COL[a];
+    // HUB: four walls and an open top the fuel drops into
+    const [hx, hz] = at(HUBX, MZ), t = 0.06;
+    for (const [dx, dz, w, d] of [[HUB / 2 - t / 2, 0, t, HUB], [-HUB / 2 + t / 2, 0, t, HUB], [0, HUB / 2 - t / 2, HUB, t], [0, -HUB / 2 + t / 2, HUB, t]]) {
+      box(w, HUB_H, d, mat(0x39424f), hx + dx, HUB_H / 2, hz + dz);
+      fixedBox(w / 2, HUB_H / 2, d / 2, hx + dx, HUB_H / 2, hz + dz, 0.35);
+    }
+    box(HUB + 0.04, 0.1, HUB + 0.04, mat(tint), hx, 0.4, hz);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(HUB * 0.5, 0.045, 8, 6), new THREE.MeshStandardMaterial({ color: 0x4cd07d, emissive: 0x4cd07d, emissiveIntensity: 1.2 }));
+    ring.rotation.x = Math.PI / 2; ring.rotation.z = Math.PI / 6; ring.position.set(hx, HUB_H + 0.03, hz); scene.add(ring);
+    hubLights[a] = ring.material;
+
+    for (const s of [-1, 1]) {
+      // BUMP: a low ramp either side of the hub
+      const [bx, bz] = at(HUBX, MZ + s * (HUB / 2 + BUMP_W / 2));
+      const shape = new THREE.Shape(); shape.moveTo(-BUMP_D / 2, 0); shape.lineTo(0, BUMP_H); shape.lineTo(BUMP_D / 2, 0); shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: BUMP_W, bevelEnabled: false }); geo.translate(0, 0, -BUMP_W / 2);
+      const bump = new THREE.Mesh(geo, mat(0xb58a3c)); bump.position.set(bx, 0, bz); bump.receiveShadow = true; proc.add(bump);
+      const pts = []; for (const z of [-BUMP_W / 2, BUMP_W / 2]) pts.push(-BUMP_D / 2, 0, z, 0, BUMP_H, z, BUMP_D / 2, 0, z);
+      const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(bx, 0, bz));
+      world.createCollider(RAPIER.ColliderDesc.convexHull(new Float32Array(pts)).setFriction(0.9).setRestitution(0.3), body);
+
+      // TRENCH: an arch from the bump out to the guardrail
+      const [qx, qz] = at(HUBX, MZ + s * (BUMP_OUT + RISER / 2));       // riser between bump and trench
+      box(TRENCH_D, 0.5, RISER, mat(0x55657c), qx, 0.25, qz);
+      fixedBox(TRENCH_D / 2, 0.25, RISER / 2, qx, 0.25, qz);
+      const [tx, tz] = at(HUBX, MZ + s * (TRENCH_IN + TRENCH_W / 2));
+      const roofH = TRENCH_H - TRENCH_CLEAR;
+      box(TRENCH_D, roofH, TRENCH_W, new THREE.MeshStandardMaterial({ color: 0x55657c, transparent: true, opacity: 0.55 }), tx, TRENCH_CLEAR + roofH / 2, tz);
+      fixedBox(TRENCH_D / 2, roofH / 2, TRENCH_W / 2, tx, TRENCH_CLEAR + roofH / 2, tz);
+      for (const cx of [-1, 1]) for (const cz of [-1, 1]) box(0.05, TRENCH_CLEAR, 0.05, mat(0x7f90a8), tx + cx * (TRENCH_D / 2 - 0.03), TRENCH_CLEAR / 2, tz + cz * (TRENCH_W / 2 - 0.03));
+
+      // TOWER uprights
+      const [ux, uz] = at(TOWER_UPX, MZ + TOWER_Z + s * (UP_GAP + UP_W) / 2);
+      box(UP_W, 1.83, UP_W, mat(0x7f90a8), ux, 0.915, uz);
+      fixedBox(UP_W / 2, 0.915, UP_W / 2, ux, 0.915, uz);
+    }
+    for (const h of RUNGS) {
+      const [rx, rz] = at(TOWER_UPX, MZ + TOWER_Z);
+      const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 47 * IN, 10), mat(tint, { metalness: 0.5, roughness: 0.3 }));
+      rung.rotation.x = Math.PI / 2; rung.position.set(rx, h, rz); proc.add(rung);
+    }
+    // DEPOT outline and the OUTPOST in the corner
+    const [dx, dz] = at(DEPOT_D / 2, MZ + DEPOT_OFF);
+    for (const [w, d, ox, oz] of [[DEPOT_D, 0.03, 0, DEPOT_W / 2], [DEPOT_D, 0.03, 0, -DEPOT_W / 2], [0.03, DEPOT_W, (a === 'blue' ? 1 : -1) * DEPOT_D / 2, 0]])
+      box(w, 0.025, d, mat(tint), dx + ox, 0.0125, dz + oz).castShadow = false;
+    const [ox, oz] = at(-0.45, CHUTE_Z);
+    box(0.7, 1.2, 1.2, mat(0x2c3542), ox, 0.6, oz); box(0.72, 0.12, 1.22, mat(tint), ox, 1.2, oz);
+  }
+  boxParent = scene;
+}
+// The official field CAD, converted by tools/build_field.py. Physics keeps its own simple shapes.
+const endMats = { blue: [], red: [] };       // driver-station materials, with their normal opacity
+function fadeEnds() {                        // see through a driver station once the camera is behind it
+  for (const [side, hidden] of [['blue', clamp((0.9 - camera.position.x) / 1.2, 0, 1)], ['red', clamp((camera.position.x - (L - 0.9)) / 1.2, 0, 1)]])
+    for (const [m, base] of endMats[side]) { m.opacity = base * (1 - 0.88 * hidden); m.depthWrite = hidden < 0.05 && base > 0.9; }
+}
+function loadFieldModel() {
+  new GLTFLoader().load('field.glb?v=2', gltf => {
+    gltf.scene.traverse(o => {
+      if (!o.isMesh) return;
+      o.receiveShadow = true; o.castShadow = !o.material.transparent; if (o.material.transparent) o.material.depthWrite = false;
+      const end = (o.name + ' ' + o.parent.name).match(/end(Blue|Red)/);      // everything behind an alliance wall
+      if (end) { o.material = o.material.clone(); o.material.transparent = true; o.castShadow = false; endMats[end[1].toLowerCase()].push([o.material, o.material.opacity]); }
+    });
+    scene.add(gltf.scene); proc.visible = false; window.__fieldModel = gltf.scene;
+  }, undefined, () => console.warn('field.glb not found - using the built-in field'));
+}
+
+// ============================================================
+// FUEL -- every ball is a physics body, pooled so none is ever created mid-match
+// ============================================================
+const balls = [];
+const pos = new Float32Array(FUEL * 3);
+const ballMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(BALL_R, 14, 10), mat(0xffd21a, { roughness: 0.6 }), FUEL);
+ballMesh.frustumCulled = false; ballMesh.castShadow = true;
+const returning = [];
+function buildBalls() {
+  for (let i = 0; i < FUEL; i++) {
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, -50, 0).setLinearDamping(0.35).setAngularDamping(0.6).setCcdEnabled(true));
+    world.createCollider(RAPIER.ColliderDesc.ball(BALL_R).setRestitution(0.45).setFriction(0.7).setDensity(120), body);
+    body.setEnabled(false);
+    balls.push({ body, on: false, shooter: null });
+  }
+  scene.add(ballMesh);
+}
+function putBall(i, x, y, z, vx = 0, vy = 0, vz = 0) {
+  const b = balls[i];
+  b.body.setEnabled(true);
+  b.body.setTranslation({ x, y, z }, true);
+  b.body.setLinvel({ x: vx, y: vy, z: vz }, true);
+  b.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  b.on = true;
+}
+function takeBall(i) { const b = balls[i]; b.on = false; b.shooter = null; if (b.flying) { b.flying = false; b.body.setLinearDamping(0.35); } b.body.setEnabled(false); }
+
+function stageFuel() {
+  returning.length = 0;
+  for (let i = 0; i < FUEL; i++) takeBall(i);
+  let next = 0;
+  for (const r of game.robots) { r.hold = []; for (let k = 0; k < Math.min(PRELOAD, r.type.cap); k++) r.hold.push(next++); }
+  const sp = BALL_R * 2 + 0.008;
+  for (const a of ['blue', 'red']) {
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {         // 24 in the depot
+      const [x, z] = mirror(a, 0.1 + i * sp, MZ + DEPOT_OFF + (j - 2.5) * sp); putBall(next++, x, BALL_R, z);
+    }
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {         // 24 fed out of the outpost chute
+      const [x, z] = mirror(a, 0.35 + i * sp, CHUTE_Z + (j - 2.5) * sp); putBall(next++, x, BALL_R, z);
+    }
+  }
+  const left = FUEL - next, cols = Math.floor(206 * IN / sp), rows = Math.ceil(left / cols);
+  for (let k = 0; k < left; k++) {                                   // the rest, corralled at mid-field
+    const row = Math.floor(k / cols), col = k % cols;
+    putBall(next++, MX + (row - (rows - 1) / 2) * sp, BALL_R, MZ + (col - (cols - 1) / 2) * sp);
+  }
+}
+function readBalls() {
+  for (let i = 0; i < FUEL; i++) {
+    const b = balls[i];
+    if (!b.on) { pos[i * 3 + 1] = -50; continue; }
+    const t = b.body.translation();
+    if (t.y < -1 || t.x < -1 || t.x > L + 1 || t.z < -1 || t.z > W + 1) {     // left the field: handed back at mid-field
+      putBall(i, MX + (Math.random() - 0.5) * 2, 0.6, MZ + (Math.random() - 0.5) * 4); b.shooter = null; continue;
+    }
+    if (b.flying && t.y < 0.25) { b.flying = false; b.body.setLinearDamping(0.35); }
+    pos[i * 3] = t.x; pos[i * 3 + 1] = t.y; pos[i * 3 + 2] = t.z;
+  }
+}
+
+// ============================================================
+// ROBOTS
+// ============================================================
+function labelSprite(text, color) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d'); g.font = 'bold 40px Segoe UI, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(8,11,16,.75)'; g.fillRect(0, 0, 256, 64); g.fillStyle = color; g.fillText(text, 128, 34);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+  s.scale.set(0.9, 0.225, 1); return s;
+}
+const MODELS = {};
+for (const t of ROBOTS) if (t.model) {
+  try {
+    MODELS[t.id] = (await new GLTFLoader().loadAsync(t.model)).scene;
+    t.rig = await (await fetch(t.model.replace('.glb', '.json'))).json();        // pivots and swing angles
+    t.turret = t.rig.turret;                                                     // where shots leave from, and what aims
+  } catch { console.warn(t.model + ' not found - using a placeholder robot'); delete MODELS[t.id]; t.blocker = false; }
+}
+function buildModelRobot(type, alliance) {
+  const g = new THREE.Group(), body = MODELS[type.id].clone(true), [fx, fz] = type.frame, rig = type.rig;
+  const turret = new THREE.Group(), head = new THREE.Group(), blocker = new THREE.Group(), sorted = [];
+  const swings = rig.swings.map(w => { const p = new THREE.Group(); p.position.set(w.pivot[0], w.pivot[1], 0); return p; });
+  turret.position.set(...rig.turret.at);
+  blocker.position.set(rig.plate.hinge[0], rig.plate.hinge[1], 0);           // hinged on the head
+  body.traverse(o => { if (o.isMesh) { o.castShadow = true; sorted.push([o, o.name + ' ' + o.parent.name]); } });
+  for (const [o, name] of sorted) {
+    const swing = name.match(/swing(\d+)/);
+    if (name.includes('turret')) turret.add(o);                              // already in turret axes
+    else if (name.includes('blocker')) { o.position.sub(blocker.position); blocker.add(o); }
+    else if (name.includes('head')) head.add(o);
+    else if (swing) { const p = swings[+swing[1]]; o.position.sub(p.position); p.add(o); }
+  }
+  head.add(blocker); g.add(body, turret, head, ...swings);
+  Object.assign(g.userData, { turret, head, blocker, swings });
+  for (const [w, d, x, z] of [[fx, 0.08, 0, fz / 2], [fx, 0.08, 0, -fz / 2], [0.08, fz + 0.08, fx / 2, 0], [0.08, fz + 0.08, -fx / 2, 0]])
+    box(w, 0.12, d, mat(COL[alliance]), x, 0.1, z, g);
+  if (type.hopper) {                   // clear polycarbonate hopper sides
+    const h = type.hopper, clear = new THREE.MeshStandardMaterial({ color: 0xdfeaf5, transparent: true, opacity: 0.2, roughness: 0.15, depthWrite: false });
+    const [x0, x1] = h.walls, hy = h.wall - h.y;
+    for (const z of h.z) box(x1 - x0, hy, 0.006, clear, (x0 + x1) / 2, h.y + hy / 2, z, g).castShadow = false;
+  }
+  const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, fz * 0.8, 8), mat(0x4cd07d, { emissive: 0x0d3a1e }));
+  roller.rotation.x = Math.PI / 2; roller.position.set(0.60, 0.11, 0); head.add(roller); g.userData.roller = roller;
+  return g;
+}
+// How far the intake head has moved for a given stow amount (0 = out, 1 = stowed). The four-bar arms
+// swing about their frame pivot, and the parallelogram keeps the head level, so it only translates.
+function headShift(rig, stow) {
+  const a = rig.arm.swing * stow, [rx, ry] = rig.arm.reach;
+  return [rx * Math.cos(a) - ry * Math.sin(a) - rx, rx * Math.sin(a) + ry * Math.cos(a) - ry];
+}
+// Centre of the blocker plate when it is level and the intake is stowed: [forward, height].
+function blockerUpAt(type) {
+  const rig = type.rig, [sx, sy] = headShift(rig, 1);
+  return [rig.plate.hinge[0] + sx + rig.plate.length / 2, rig.plate.hinge[1] + sy];
+}
+function buildRobotMesh(type, alliance) {
+  if (type.model && MODELS[type.id]) return buildModelRobot(type, alliance);
+  const g = new THREE.Group(), s = type.size, h = type.tall ? 0.78 : 0.44, tint = COL[alliance];
+  const dark = mat(0x1d232c, { metalness: 0.4, roughness: 0.5 }), accent = mat(type.color, { metalness: 0.2, roughness: 0.45 });
+  box(s - 0.08, 0.1, s - 0.08, dark, 0, 0.12, 0, g);
+  for (const [w, d, x, z] of [[s, 0.09, 0, s / 2 - 0.045], [s, 0.09, 0, -s / 2 + 0.045], [0.09, s, s / 2 - 0.045, 0], [0.09, s, -s / 2 + 0.045, 0]])
+    box(w, 0.13, d, mat(tint), x, 0.13, z, g);
+  for (const x of [-1, 1]) for (const z of [-1, 1]) {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 12), mat(0x0c0e12));
+    wheel.rotation.x = Math.PI / 2; wheel.position.set(x * (s / 2 - 0.13), 0.05, z * (s / 2 - 0.13)); g.add(wheel);
+  }
+  // hopper walls, open on top
+  for (const [w, d, x, z] of [[s * 0.62, 0.02, -0.04, s * 0.3], [s * 0.62, 0.02, -0.04, -s * 0.3], [0.02, s * 0.6, -s * 0.35, 0]])
+    box(w, h - 0.18, d, new THREE.MeshStandardMaterial({ color: type.color, transparent: true, opacity: 0.5 }), x, 0.18 + (h - 0.18) / 2, z, g);
+  // intake roller across the front (+X)
+  const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, s * 0.8, 12), mat(0x4cd07d, { emissive: 0x0d3a1e }));
+  roller.rotation.x = Math.PI / 2; roller.position.set(s / 2 + 0.05, 0.1, 0); g.add(roller); g.userData.roller = roller;
+  // shooter
+  const shooter = new THREE.Group(); shooter.position.set(-0.05, h, 0); g.add(shooter);
+  if (type.id === 'needle') { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.1, 16), accent); shooter.add(t); }
+  box(0.2, 0.16, 0.24, accent, 0.02, 0.1, 0, shooter).rotation.z = 0.5;
+  if (type.climb > 1) for (const z of [-1, 1]) box(0.04, 0.3 + type.climb * 0.12, 0.04, mat(0xd7dfea, { metalness: 0.7, roughness: 0.3 }), -s / 2 + 0.12, h, z * (s / 2 - 0.12), g);
+  if (type.id === 'bastion') box(s + 0.06, 0.06, s + 0.06, mat(0x525f70), 0, 0.22, 0, g);
+  return g;
+}
+
+// Slots where held fuel sits, in robot axes: a grid filling the hopper, layer on layer.
+function hopperSlots(type) {
+  const s = type.size, h = type.hopper || { x: [-s * 0.3, s * 0.22], z: [-s * 0.27, s * 0.27], y: 0.26 };
+  const step = BALL_R * 2 + 0.004, layer = [];
+  for (let x = h.x[0] + BALL_R; x <= h.x[1] - BALL_R + 1e-6; x += step) for (let z = h.z[0] + BALL_R; z <= h.z[1] - BALL_R + 1e-6; z += step)
+    if (!h.skip || !(x > h.skip[0] && x < h.skip[1] && z > h.skip[2] && z < h.skip[3])) layer.push([x, z]);
+  const out = [];
+  for (let k = 0; k < type.cap; k++) { const [x, z] = layer[k % layer.length], n = Math.floor(k / layer.length); out.push([x + (n % 2) * 0.02, h.y + BALL_R + n * step * 0.86, z + (n % 2) * 0.02]); }
+  return out;
+}
+function makeRobot(type, alliance, slot, human, x, z) {
+  const r = { type, alliance, slot, human, x, z, th: alliance === 'blue' ? 0 : Math.PI, vx: 0, vz: 0, w: 0, y: 0, pitch: 0, lift: 0,
+    hold: [], cool: 0, climb: 0, climbT: 0, atTower: false, contact: false, pin: 0, fouls: 0, block: 0, stow: 0, blockOn: false, aim: alliance === 'blue' ? 0 : Math.PI,
+    stats: { scored: 0, shots: 0, passes: 0, intaken: 0 },
+    cmd: { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false },
+    ai: { mode: 'score', goal: null, target: null, replan: 0, stuck: 0, jig: 0, jigAng: 0, chase: 0, last: 0, avoid: null, climbAt: 14 + Math.random() * 8 } };
+  r.half = type.size / 2; r.radius = type.size * 0.56; r.slots = hopperSlots(type);
+  r.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, 0.21, z));
+  // The box reaches below the carpet: on a bump the level box would otherwise ride up over fuel and crush it.
+  world.createCollider(RAPIER.ColliderDesc.cuboid(r.half, 0.33, r.half).setTranslation(0, -0.14, 0).setFriction(0.2).setRestitution(0.05), r.body);
+  if (type.blocker && type.rig) {     // the level plate is a real obstacle for fuel in flight
+    r.blockBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, -20, z));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(type.rig.plate.length / 2, 0.02, type.rig.plate.halfWidth).setRestitution(0.3), r.blockBody);
+    r.blockBody.setEnabled(false);
+  }
+  r.tilt = new THREE.Group(); r.mesh = buildRobotMesh(type, alliance); r.tilt.add(r.mesh);
+  const tag = labelSprite(human ? 'YOU' : type.name.toUpperCase(), human ? '#ffb300' : (alliance === 'blue' ? '#8db7ff' : '#ff97a6'));
+  tag.position.set(0, (type.tall ? 0.78 : 0.44) + 0.55, 0); r.tilt.add(tag);
+  scene.add(r.tilt);
+  return r;
+}
+function removeRobot(r) { world.removeRigidBody(r.body); if (r.blockBody) world.removeRigidBody(r.blockBody); scene.remove(r.tilt); }
+
+function moveRobot(r, dt) {
+  const t = r.type, c = r.cmd;
+  if (r.climb) { r.vx = r.vz = r.w = 0; return; }
+  const [h, slope] = bumpAt(r.x, r.z);
+  const onBump = h > 0.01, top = t.speed * (onBump ? 0.55 : 1);
+  let tx = c.vx, tz = c.vz; const sp = Math.hypot(tx, tz);
+  if (sp > top) { tx *= top / sp; tz *= top / sp; }
+  const dvx = tx - r.vx, dvz = tz - r.vz, dv = Math.hypot(dvx, dvz), lim = t.accel * (onBump ? 0.5 : 1) * dt;
+  if (dv > lim) { r.vx += dvx / dv * lim; r.vz += dvz / dv * lim; } else { r.vx = tx; r.vz = tz; }
+  const now = Math.hypot(r.vx, r.vz); if (now > top) { r.vx *= top / now; r.vz *= top / now; }
+  r.w += clamp(c.w - r.w, -40 * dt, 40 * dt);
+  r.px = r.x; r.pz = r.z; r.pth = r.th;
+  r.x += r.vx * dt; r.z += r.vz * dt; r.th = wrap(r.th + r.w * dt);
+  r.y = h; r.pitch += (Math.atan(slope) - r.pitch) * 0.25;
+}
+const isTall = r => r.type.tall || r.stow > 0.3;      // a stowed intake no longer fits under a trench
+function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
+  const c = Math.cos(r.th), s = Math.sin(r.th), dx = r.x - o.x, dz = r.z - o.z;
+  let bestPen = Infinity, nx = 0, nz = 0;
+  for (const [ax, az] of [[1, 0], [0, 1], [c, s], [-s, c]]) {
+    const reachO = o.hx * Math.abs(ax) + o.hz * Math.abs(az);
+    const reachR = r.half * (Math.abs(ax * c + az * s) + Math.abs(-ax * s + az * c));
+    const gap = dx * ax + dz * az, pen = reachO + reachR - Math.abs(gap);
+    if (pen <= 0) return null;
+    if (pen < bestPen) { bestPen = pen; const sg = gap >= 0 ? 1 : -1; nx = ax * sg; nz = az * sg; }
+  }
+  return [bestPen, nx, nz];
+}
+function collideField(r) {
+  r.contact = false;
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (const o of OBSTACLES) {
+      if (o.kind === 'overhead' && !isTall(r)) continue;
+      const hit = overlap(r, o); if (!hit) continue;
+      const [pen, nx, nz] = hit; r.x += nx * pen; r.z += nz * pen;
+      const vn = r.vx * nx + r.vz * nz; if (vn < 0) { r.vx -= vn * nx; r.vz -= vn * nz; }
+      moved = true;
+    }
+    const c = Math.abs(Math.cos(r.th)), s = Math.abs(Math.sin(r.th)), ext = r.half * (c + s);
+    if (r.x < ext) { r.x = ext; if (r.vx < 0) r.vx = 0; moved = true; } else if (r.x > L - ext) { r.x = L - ext; if (r.vx > 0) r.vx = 0; moved = true; }
+    if (r.z < ext) { r.z = ext; if (r.vz < 0) r.vz = 0; moved = true; } else if (r.z > W - ext) { r.z = W - ext; if (r.vz > 0) r.vz = 0; moved = true; }
+    if (!moved) return; r.contact = true;
+  }
+  if (OBSTACLES.some(o => (o.kind === 'solid' || isTall(r)) && overlap(r, o))) { r.x = r.px; r.z = r.pz; r.th = r.pth; r.vx = r.vz = r.w = 0; }
+}
+function collideRobots() {
+  const rs = game.robots;
+  for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+    const a = rs[i], b = rs[j], dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz), reach = a.radius + b.radius;
+    if (d >= reach || d < 1e-6 || (a.climb && b.climb)) continue;
+    const nx = dx / d, nz = dz / d, gap = reach - d;
+    const sa = a.climb ? 0 : b.climb ? 1 : b.type.mass / (a.type.mass + b.type.mass);
+    a.x -= nx * gap * sa; a.z -= nz * gap * sa; b.x += nx * gap * (1 - sa); b.z += nz * gap * (1 - sa);
+    if (a.alliance !== b.alliance) { pinCheck(a, b, nx, nz); pinCheck(b, a, -nx, -nz); }
+  }
+}
+function pinCheck(p, v, nx, nz) {      // p shoving v into a wall or field element for 3 s is a foul
+  const pushing = p.cmd.vx * nx + p.cmd.vz * nz > 0.5;
+  if (pushing && v.contact && Math.hypot(v.vx, v.vz) < 0.5 && !v.climb) p.pinning = true;
+}
+
+// ---------- intake / shooter / climb ----------
+function runIntake(r) {
+  const free = r.type.cap - r.hold.length;
+  if (!r.cmd.intake || free <= 0 || r.climb || r.stow > 0.1) return;
+  const c = Math.cos(r.th), s = Math.sin(r.th), front = r.half + (r.type.reach || 0.16), back = r.half - 0.08, halfW = r.half * 0.85;
+  let taken = 0;
+  for (let i = 0; i < FUEL && taken < free; i++) {
+    if (!balls[i].on || pos[i * 3 + 1] > 0.34) continue;
+    const dx = pos[i * 3] - r.x, dz = pos[i * 3 + 2] - r.z;
+    if (Math.abs(dx) > front || Math.abs(dz) > front) continue;
+    const lx = dx * c + dz * s, lz = -dx * s + dz * c;
+    if (lx >= back && lx <= front && Math.abs(lz) <= halfW) { takeBall(i); pos[i * 3 + 1] = -50; r.hold.push(i); taken++; }
+  }
+  r.stats.intaken += taken;
+}
+function shotPlan(r) {
+  if (inZone(r)) { const h = HUBS[r.alliance]; return { mode: 'hub', x: h.x, y: HUB_H + 0.15, z: h.z, d: Math.hypot(h.x - r.x, h.z - r.z) }; }
+  const x = wallX(r.alliance, 2.2), z = clamp(r.z, 0.7, W - 0.7);
+  return { mode: 'pass', x, y: 0.1, z, d: Math.hypot(x - r.x, z - r.z) };
+}
+function fire(r, sloppyScale) {
+  if (!r.hold.length || underTrench(r.x, r.z)) return false;
+  const plan = shotPlan(r), i = r.hold.pop();
+  const at = r.type.turret ? r.type.turret.at : [0, 0, 0], co = Math.cos(r.th), si = Math.sin(r.th);
+  const px = r.x + at[0] * co - at[2] * si, py = r.y + r.lift + (r.type.shotY || (r.type.tall ? 0.95 : 0.66)), pz = r.z + at[0] * si + at[2] * co;
+  const dx = plan.x - px, dz = plan.z - pz, d = Math.max(0.05, Math.hypot(dx, dz)), dh = plan.y - py;
+  let th = (plan.mode === 'pass' ? 45 : d < 1.6 ? 78 : d < 3 ? 68 : 60) * Math.PI / 180;
+  while (d * Math.tan(th) <= dh + 0.15 && th < 1.5) th += 0.06;
+  const sloppy = (1 - r.type.acc) * sloppyScale;
+  const v = Math.sqrt(G * d * d / (2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dh))) * (1 + gauss() * sloppy * 0.3);
+  const yaw = Math.atan2(dz, dx) + gauss() * sloppy * 0.45, vh = v * Math.cos(th);
+  // A good shooter cancels its own motion; a sloppy one lets the shot drift
+  const drift = r.type.sotm ? 0 : sloppy * 3;        // shoot-on-the-move turrets cancel the robot's motion
+  putBall(i, px, py, pz, Math.cos(yaw) * vh + r.vx * drift, v * Math.sin(th), Math.sin(yaw) * vh + r.vz * drift);
+  balls[i].shooter = r; balls[i].flying = true; balls[i].body.setLinearDamping(0); r.stats.shots++;
+  if (plan.mode === 'pass') r.stats.passes++;
+  if (r.human) rumble(0.25, 40);
+  return true;
+}
+function runClimb(r, dt) {
+  const cx = wallX(r.alliance, TOWER_D + 0.55);
+  r.atTower = Math.abs(cx - r.x) < 0.85 && Math.abs(r.z - towerZ(r.alliance)) < 1.5;
+  const can = game.mode === 'free' || game.t >= PHASES[0][1];
+  if (r.cmd.climb && can && r.type.climb && (r.atTower || r.climb)) {
+    r.climbT += dt;
+    const level = Math.min(r.type.climb, CLIMB_TIMES.filter(t => r.climbT >= t).length);
+    if (level > r.climb) { r.climb = level; if (r.human) { toast(`TOWER LEVEL ${level}`); rumble(0.8, 200); } }
+  } else if (!r.climb) r.climbT = 0;
+  r.lift += (CLIMB_Y[r.climb] - r.lift) * 0.06;
+}
+
+// ============================================================
+// AI DRIVERS
+// ============================================================
+function route(r, tx, tz) {       // the hub line is only crossed through a bump or trench lane
+  const lanes = r.type.tall ? BUMP_LANES : ALL_LANES, near = (list, f) => list.reduce((b, v) => f(v) < f(b) ? v : b);
+  for (const lx of [HUBX, L - HUBX].sort((a, b) => Math.abs(a - r.x) - Math.abs(b - r.x))) {
+    const sr = r.x - lx, st = tx - lx, sign = sr >= 0 ? 1 : -1, under = underTrench(tx, tz);
+    if (Math.abs(sr) < BAND) {
+      const lane = near(lanes, v => Math.abs(v - r.z));
+      if (under) return Math.abs(tz - lane) < 0.8 ? [tx, tz] : [lx + sign * (BAND + 0.35), lane];
+      return sr * st > 0 ? [tx, tz] : [lx - sign * (BAND + 0.35), lane];
+    }
+    if (under && Math.abs(st) < BAND) {
+      const lane = near(ALL_LANES, v => Math.abs(v - tz));
+      return Math.abs(r.z - lane) > 0.3 ? [lx + sign * (BAND + 0.25), lane] : [tx, tz];
+    }
+    if (sr * st < 0) {
+      const lane = near(lanes, v => Math.abs(v - r.z) + 0.5 * Math.abs(v - tz));
+      return Math.abs(r.z - lane) > 0.3 ? [lx + sign * (BAND + 0.25), lane] : [lx - sign * (BAND + 0.35), lane];
+    }
+  }
+  return [tx, tz];
+}
+function pickBall(r) {
+  const mates = game.robots.filter(o => o !== r && o.alliance === r.alliance && o.ai.target).map(o => o.ai.target);
+  const avoid = r.ai.avoid && r.ai.avoid[2] > game.t ? r.ai.avoid : null;
+  let bestCost = 1e9, bestAt = null;
+  for (let i = 0; i < FUEL; i++) {
+    if (!balls[i].on || pos[i * 3 + 1] > 0.3) continue;
+    const x = pos[i * 3], z = pos[i * 3 + 2];
+    if (r.type.tall && underTrench(x, z)) continue;
+    if ((x < TOWER_D + 0.2 || x > L - TOWER_D - 0.2) && Math.abs(z - MZ) < 1.15) continue;
+    if (avoid && Math.abs(x - avoid[0]) < 1 && Math.abs(z - avoid[1]) < 1) continue;
+    let cost = Math.abs(x - r.x) + Math.abs(z - r.z);
+    if ((r.x - HUBX) * (x - HUBX) < 0) cost += 3;
+    if ((r.x - (L - HUBX)) * (x - (L - HUBX)) < 0) cost += 3;
+    if (cost >= bestCost) continue;
+    if (mates.some(m => Math.abs(x - m[0]) < 1.2 && Math.abs(z - m[1]) < 1.2)) cost += 6;
+    if (cost < bestCost) { bestCost = cost; bestAt = [x, z]; }
+  }
+  return bestAt;
+}
+function think(r, dt) {
+  const a = r.ai, sk = SKILLS[game.skill], c = r.cmd, vmax = r.type.speed * sk.speed;
+  const hubOn = hubActive(r.alliance), home = inZone(r), left = game.mode === 'free' ? 999 : MATCH_T - game.t;
+  c.intake = true; c.shoot = false; c.climb = false;
+  let goal, arrive = true, collecting = false;
+  if (r.type.climb && left < a.climbAt) {
+    goal = [wallX(r.alliance, TOWER_D + 0.55), towerZ(r.alliance) + [-0.95, 0.95, 0][r.slot]];
+    c.shoot = home && r.hold.length > 0;
+    if (Math.hypot(goal[0] - r.x, goal[1] - r.z) < 0.45) { c.vx = c.vz = c.w = 0; c.climb = true; c.intake = false; return; }
+  } else {
+    const need = hubOn ? Math.max(1, Math.floor(r.type.cap * sk.fill)) : r.type.cap;
+    if (a.mode === 'collect' && (r.hold.length >= need || (r.hold.length > 0 && left < 10))) {
+      a.mode = 'score'; a.goal = [wallX(r.alliance, 2.5), clamp(r.z, 1.3, W - 1.3)];
+    } else if (a.mode === 'score' && !r.hold.length) { a.mode = 'collect'; a.replan = 0; }
+    if (a.mode === 'score') {
+      goal = a.goal || [wallX(r.alliance, 2.5), r.z];
+      c.shoot = home ? hubOn : !hubOn;          // away with a dead hub: pass the load home
+    } else {
+      a.chase = r.hold.length !== a.last ? 0 : a.chase + dt; a.last = r.hold.length;
+      if (a.chase > 5 && a.target) { a.avoid = [a.target[0], a.target[1], game.t + 10]; a.chase = 0; a.target = null; }
+      a.replan -= dt;
+      if (a.replan <= 0 || !a.target) { a.target = pickBall(r); a.replan = sk.replan; }
+      if (a.target) { goal = a.target; arrive = false; collecting = true; } else goal = [wallX(r.alliance, 2.5), r.z];
+    }
+  }
+  const [wx, wz] = route(r, goal[0], goal[1]), final = wx === goal[0] && wz === goal[1];
+  const dx = wx - r.x, dz = wz - r.z, d = Math.hypot(dx, dz);
+  let speed = vmax; if (arrive && final) speed *= Math.min(1, d / 0.7);
+  let want = r.th;
+  if (a.mode === 'score' && home && final && d < 1) { const h = HUBS[r.alliance]; want = Math.atan2(h.z - r.z, h.x - r.x); }
+  else if (d > 0.3) want = Math.atan2(dz, dx);
+  const err = wrap(want - r.th);
+  c.w = clamp(5 * err, -r.type.turn, r.type.turn);
+  if (collecting && final && d < 1.2 && Math.abs(err) > 0.6) speed *= 0.35;
+  if (d < 0.05) { c.vx = c.vz = 0; } else { c.vx = dx / d * speed; c.vz = dz / d * speed; }
+  if (speed > 1 && Math.hypot(r.vx, r.vz) < 0.3) a.stuck += dt; else a.stuck = Math.max(0, a.stuck - dt);
+  if (a.stuck > 0.8) {
+    a.stuck = 0; a.jig = 0.5; a.jigAng = Math.atan2(dz, dx) + (Math.random() < 0.5 ? -1 : 1) * (1.2 + Math.random());
+    if (collecting && a.target) a.avoid = [a.target[0], a.target[1], game.t + 6];
+    a.target = null;
+  }
+  if (a.jig > 0) { a.jig -= dt; c.vx = Math.cos(a.jigAng) * vmax * 0.7; c.vz = Math.sin(a.jigAng) * vmax * 0.7; }
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+const down = new Set();
+let rebinding = null, camMode = 0, fieldRelative = true, padPrev = {};
+const CAMS = ['Chase camera', 'Driver station', 'On-board'];
+window.addEventListener('keydown', e => {
+  if (rebinding) { e.preventDefault(); if (e.code !== 'Escape') { keys[rebinding] = e.code; save('ra.keys', keys); } rebinding = null; drawBinds(); return; }
+  if (state === 'play') {
+    if (e.code === 'Escape') { setPaused(!paused); return; }
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+    if (!e.repeat) press(Object.keys(keys).find(k => keys[k] === e.code));
+  }
+  down.add(e.code);
+});
+window.addEventListener('keyup', e => down.delete(e.code));
+window.addEventListener('blur', () => down.clear());
+function press(action) {
+  if (action === 'camera') { camMode = (camMode + 1) % 3; }
+  else if (action === 'relative') fieldRelative = !fieldRelative;
+  else if (action === 'blocker' && game.me?.type.blocker) {
+    if (!game.me.blockOn && underTrench(game.me.x, game.me.z)) toast('NO ROOM TO STOW UNDER A TRENCH');
+    else { game.me.blockOn = !game.me.blockOn; toast(game.me.blockOn ? 'INTAKE STOWING — BLOCKER UP' : 'BLOCKER DOWN — INTAKE OUT'); }
+  }
+  else if (action === 'hideHud') $('hud').classList.toggle('on');
+  else if (action === 'reset' && game.mode === 'free') { stageFuel(); toast('FIELD RESET'); }
+}
+function rumble(strength, ms) {
+  const pad = (navigator.getGamepads?.() || []).find(p => p);
+  pad?.vibrationActuator?.playEffect?.('dual-rumble', { duration: ms, strongMagnitude: strength, weakMagnitude: strength }).catch(() => {});
+}
+function readHuman(r) {
+  if (game.bricked) { Object.assign(r.cmd, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); return; }
+  const k = a => down.has(keys[a]) || (a === 'intake' && down.has('ShiftRight'));
+  let f = (k('forward') ? 1 : 0) - (k('back') ? 1 : 0), s = (k('right') ? 1 : 0) - (k('left') ? 1 : 0), turn = (k('turnRight') ? 1 : 0) - (k('turnLeft') ? 1 : 0);
+  let intake = k('intake'), shoot = k('shoot'), climb = k('climb');
+  const mag = Math.hypot(f, s); if (mag > 1) { f /= mag; s /= mag; }
+  const pad = (navigator.getGamepads?.() || []).find(p => p);
+  if (pad) {
+    const dz = v => Math.abs(v) < 0.12 ? 0 : Math.sign(v) * v * v;
+    const pf = dz(-pad.axes[1] || 0), ps = dz(pad.axes[0] || 0), pt = dz(pad.axes[2] || 0);
+    if (pf || ps) { f = pf; s = ps; } if (pt) turn = pt;
+    const b = i => pad.buttons[i]?.pressed;
+    intake = intake || b(4); shoot = shoot || (pad.buttons[7]?.value > 0.3); climb = climb || b(0);
+    if (b(3) && !padPrev.y) press('camera'); if (b(9) && !padPrev.start) setPaused(!paused);
+    padPrev = { y: b(3), start: b(9) };
+  }
+  const c = r.cmd, v = r.type.speed, rel = !fieldRelative || camMode === 2;
+  if (rel) { const co = Math.cos(r.th), si = Math.sin(r.th); c.vx = (f * co - s * si) * v; c.vz = (f * si + s * co) * v; }
+  else { c.vx = f * v; c.vz = s * v; }
+  c.w = turn * r.type.turn; c.intake = intake; c.shoot = shoot; c.climb = climb;
+}
+
+// ============================================================
+// GAME STATE & MATCH RULES
+// ============================================================
+let state = 'menu', paused = false;
+const game = { robots: [], me: null, mode: 'match', skill: 1, t: 0, done: false, firstOff: null,
+  score: { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } } };
+function phaseIndex() { let t = game.t; for (let i = 0; i < PHASES.length; i++) { if (t < PHASES[i][1]) return i; t -= PHASES[i][1]; } return PHASES.length - 1; }
+function hubActive(alliance) {
+  if (game.mode === 'free') return true;
+  const i = phaseIndex(); if (i < 2 || i > 5 || !game.firstOff) return true;
+  const off = (i - 1) % 2 === 1 ? game.firstOff : (game.firstOff === 'blue' ? 'red' : 'blue');
+  return alliance !== off;
+}
+function summary() {
+  const out = {};
+  for (const a of ['blue', 'red']) {
+    const s = game.score[a], fuel = s.auto + s.tele, tower = game.robots.filter(r => r.alliance === a).reduce((n, r) => n + CLIMB_PTS[r.climb], 0);
+    out[a] = { auto: s.auto, tele: s.tele, fuel, tower, foul: s.foul, total: fuel + tower + s.foul };
+  }
+  for (const [a, b] of [['blue', 'red'], ['red', 'blue']]) {
+    const o = out[a];
+    o.bonus = [o.fuel >= RP.energized && 'Energized', o.fuel >= RP.supercharged && 'Supercharged', o.tower >= RP.traversal && 'Traversal'].filter(Boolean);
+    o.rp = (o.total > out[b].total ? 3 : o.total === out[b].total ? 1 : 0) + o.bonus.length;
+  }
+  return out;
+}
+
+function newGame() {
+  game.robots.forEach(removeRobot);
+  game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = opts.mode; game.skill = opts.skill;
+  game.bricked = false; game.brickAt = 0; game.second = 0; setBrickLook(false);
+  game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
+  const zs = [MZ - 2.3, MZ + 2.3, MZ];
+  const others = ROBOTS.filter((_, i) => i !== opts.robot);
+  const pick = () => others[Math.floor(Math.random() * others.length)];
+  game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, opts.sx, opts.sz);
+  game.robots.push(game.me);
+  for (let s = 0; s < opts.size; s++) {
+    if (s > 0) game.robots.push(makeRobot(pick(), 'blue', s, false, 2.6, zs[s]));
+    game.robots.push(makeRobot(pick(), 'red', s, false, L - 2.6, W - zs[s]));
+  }
+  for (const r of game.robots) collideField(r);
+  stageFuel();
+  camMode = 0; acc = 0;
+  setKeysHint();
+}
+
+function setBrickLook(on) { $('view').classList.toggle('bricked', on); $('brick').classList.toggle('on', on); }
+function brick() {                    // the robot dies on the spot; the match ends after a slow-motion beat
+  if (game.bricked || state !== 'play') return;
+  game.bricked = true; game.brickAt = performance.now(); game.me.blockOn = false; setBrickLook(true); rumble(1, 600);
+}
+function tick() {
+  game.second += STEP;
+  if (game.second >= 1) { game.second -= 1; if (opts.brick && Math.random() < BRICK_CHANCE) brick(); }
+  const dt = STEP, wasAuto = game.mode === 'match' && phaseIndex() === 0, before = phaseIndex();
+  game.t += dt;
+  if (game.mode === 'match') {
+    if (wasAuto && phaseIndex() !== 0) {
+      const b = game.score.blue.auto, r = game.score.red.auto;
+      game.firstOff = b > r ? 'blue' : r > b ? 'red' : (Math.random() < 0.5 ? 'blue' : 'red');
+    }
+    if (phaseIndex() !== before) toast(PHASES[phaseIndex()][0] + (hubActive('blue') ? '' : ' — YOUR HUB IS OFF'));
+    if (game.t >= MATCH_T) { game.t = MATCH_T; finish(); return; }
+  }
+  readBalls();
+  const sk = SKILLS[game.skill];
+  for (const r of game.robots) {
+    if (r.human) readHuman(r); else think(r, dt);
+    r.pinning = false;
+    runClimb(r, dt);
+    moveRobot(r, dt);
+  }
+  collideRobots();
+  for (const r of game.robots) {
+    if (!r.climb) collideField(r);
+    // three seconds of pinning is a foul: points to the other alliance
+    if (r.pinning) { r.pin += dt; if (r.pin >= PIN_LIMIT) { r.pin = -2; r.fouls++; game.score[r.alliance === 'blue' ? 'red' : 'blue'].foul += FOUL_PTS; toast(`FOUL — ${r.alliance.toUpperCase()} PIN`); } }
+    else r.pin = r.pin < 0 ? Math.min(0, r.pin + dt) : Math.max(0, r.pin - 2 * dt);
+    runIntake(r);
+    r.cool -= dt;
+    if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.human ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.human ? 1 : sk.rate));
+    const y = r.y + r.lift + 0.21;
+    r.body.setNextKinematicTranslation({ x: r.x, y, z: r.z });
+    r.body.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
+    if (r.type.turret) {                 // the turret tracks its target whatever the chassis is doing
+      const plan = shotPlan(r);
+      r.aim += clamp(wrap(Math.atan2(plan.z - r.z, plan.x - r.x) - r.aim), -9 * dt, 9 * dt);
+    }
+    if (r.blockBody) {
+      // Sequence: intake swings up, then the blocker deploys; lowering runs it backwards.
+      if (r.blockOn && !r.climb) { r.stow = Math.min(1, r.stow + dt / 0.5); if (r.stow >= 1) r.block = Math.min(1, r.block + dt / 0.3); }
+      else { r.block = Math.max(0, r.block - dt / 0.3); if (r.block <= 0) r.stow = Math.max(0, r.stow - dt / 0.5); }
+      const up = r.block > 0.6;
+      if (up !== r.blockBody.isEnabled()) r.blockBody.setEnabled(up);
+      if (up) {
+        const [fwd, high] = blockerUpAt(r.type);
+        r.blockBody.setNextKinematicTranslation({ x: r.x + Math.cos(r.th) * fwd, y: r.y + r.lift + high, z: r.z + Math.sin(r.th) * fwd });
+        r.blockBody.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
+      }
+    }
+  }
+  world.step();
+  // fuel that dropped into a hub: score it, then roll it back out toward mid-field
+  for (let i = 0; i < FUEL; i++) {
+    const b = balls[i]; if (!b.on) continue;
+    const t = b.body.translation();
+    if (!b.flying) {                    // squeezed fuel must not rocket away
+      const v = b.body.linvel(), sp = Math.hypot(v.x, v.z);
+      if (sp > MAX_ROLL || v.y > MAX_HOP) { const k = sp > MAX_ROLL ? MAX_ROLL / sp : 1; b.body.setLinvel({ x: v.x * k, y: Math.min(v.y, MAX_HOP), z: v.z * k }, true); }
+    }
+    if (t.y > HUB_H - 0.1) continue;
+    for (const a of ['blue', 'red']) {
+      const h = HUBS[a];
+      if (Math.abs(t.x - h.x) < HUB / 2 - 0.07 && Math.abs(t.z - h.z) < HUB / 2 - 0.07) {
+        if (hubActive(a)) { game.score[a][game.mode === 'match' && phaseIndex() === 0 ? 'auto' : 'tele']++; if (b.shooter?.alliance === a) b.shooter.stats.scored++; }
+        takeBall(i); returning.push([1.6, a, i]); break;
+      }
+    }
+  }
+  for (let k = returning.length - 1; k >= 0; k--) {
+    const e = returning[k]; e[0] -= dt; if (e[0] > 0) continue;
+    const h = HUBS[e[1]], out = e[1] === 'blue' ? 1 : -1, off = [-0.42, -0.14, 0.14, 0.42][e[2] % 4];
+    putBall(e[2], h.x + out * (HUB / 2 + 0.14), 0.12, h.z + off, out * 1.6, 0, off * 0.8);
+    returning.splice(k, 1);
+  }
+}
+function finish() {
+  game.done = true; state = 'results'; $('brick').classList.remove('on');
+  const s = summary(), win = game.bricked ? 'BRICKED' : s.blue.total > s.red.total ? 'BLUE WINS' : s.red.total > s.blue.total ? 'RED WINS' : 'TIE';
+  $('resTitle').textContent = win; $('resTitle').style.color = game.bricked ? '#d8262f' : win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--amber)';
+  const row = (name, key, cls = '') => `<tr class="${cls}"><td>${name}</td><td>${s.blue[key]}</td><td>${s.red[key]}</td></tr>`;
+  $('resTable').innerHTML = `<tr><th></th><th class="b">BLUE</th><th class="r">RED</th></tr>` + row('Auto fuel', 'auto') + row('Teleop fuel', 'tele') +
+    row('Tower', 'tower') + row('Foul points', 'foul') + row('Total', 'total', 'total') + row('Ranking points', 'rp') +
+    `<tr><td>Bonus RP</td><td>${s.blue.bonus.join(', ') || '—'}</td><td>${s.red.bonus.join(', ') || '—'}</td></tr>`;
+  const me = game.me, key = `${me.type.id}.${opts.size}`, mine = me.stats.scored;
+  const record = !(key in best) || mine > best[key]; if (record) { best[key] = mine; save('ra.best', best); }
+  const pct = me.stats.shots ? Math.round(100 * me.stats.scored / Math.max(1, me.stats.shots - me.stats.passes)) : 0;
+  $('resExtra').textContent = `You (${me.type.name}): ${mine} scored from ${me.stats.shots} shots (${pct}% of hub shots), ${me.stats.passes} passes, ` +
+    `${me.stats.intaken} picked up, tower level ${me.climb}, ${me.fouls} fouls. ` + (game.bricked ? `Your robot bricked ${Math.floor(game.t)} seconds in. ` : '') + (record ? 'New personal best.' : `Personal best: ${best[key]}.`);
+  show('results');
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+const dummy = new THREE.Object3D(), tmp = new THREE.Vector3(), held = new Uint8Array(FUEL), heldAt = new Float32Array(FUEL * 3);
+function render() {
+  held.fill(0);
+  for (const r of game.robots) {         // fuel in a hopper rides along with its robot
+    const co = Math.cos(r.th), si = Math.sin(r.th);
+    const back = (r.type.hopper?.stowBack || 0) * r.stow;
+    r.hold.forEach((i, k) => { let [lx, ly, lz] = r.slots[Math.min(k, r.slots.length - 1)]; lx -= back; held[i] = 1;
+      heldAt[i * 3] = r.x + lx * co - lz * si; heldAt[i * 3 + 1] = r.y + r.lift + ly; heldAt[i * 3 + 2] = r.z + lx * si + lz * co; });
+  }
+  for (let i = 0; i < FUEL; i++) {
+    const b = balls[i];
+    if (b.on) { const t = b.body.translation(); dummy.position.set(t.x, t.y, t.z); dummy.scale.setScalar(1); }
+    else if (held[i]) { dummy.position.set(heldAt[i * 3], heldAt[i * 3 + 1], heldAt[i * 3 + 2]); dummy.scale.setScalar(1); }
+    else { dummy.position.set(0, -50, 0); dummy.scale.setScalar(0.001); }
+    dummy.updateMatrix(); ballMesh.setMatrixAt(i, dummy.matrix);
+  }
+  ballMesh.instanceMatrix.needsUpdate = true;
+  for (const r of game.robots) {
+    r.tilt.position.set(r.x, r.y + r.lift, r.z); r.tilt.rotation.z = r.pitch; r.mesh.rotation.y = -r.th;
+    const u = r.mesh.userData;
+    if (u.turret) {
+      const rig = r.type.rig, [sx, sy] = headShift(rig, r.stow);
+      u.turret.rotation.y = -(r.aim - r.th);
+      u.swings.forEach((p, i) => { p.rotation.z = rig.swings[i].swing * r.stow; });   // arms swing on their pivots
+      u.head.position.set(sx, sy, 0);                                                 // head stays level
+      u.blocker.rotation.z = rig.plate.swing * (1 - r.block);                         // hanging down -> level
+      u.roller.visible = r.stow < 0.1;
+    }
+    r.mesh.userData.roller.material.emissiveIntensity = r.cmd.intake ? 2.5 : 0.2;
+    if (r.cmd.intake) r.mesh.userData.roller.rotation.y += 0.5;
+  }
+  for (const a of ['blue', 'red']) { const on = hubActive(a); hubLights[a].color.setHex(on ? 0x4cd07d : 0x55202a); hubLights[a].emissive.setHex(on ? 0x4cd07d : 0x2a0a10); }
+  const me = game.me;
+  if (window.__freeCam) { /* test hook: camera driven from the console */ }
+  else if (state === 'play' || state === 'results') {
+    if (camMode === 0 && me) { const near = clamp(1 - (me.x - 1.2) / 4.5, 0, 1);          // 1 at our wall, 0 from mid-zone outward
+      tmp.set(me.x - 5.0 + near * 0.6, 4.4 - near * 2.5, me.z); camera.position.lerp(tmp, 0.12);
+      camera.lookAt(me.x + 1.8 - near * 0.8, 0.3 + near * 0.35, me.z); camera.fov = 55; }
+    else if (camMode === 1) { camera.position.set(-3.0, 2.3, MZ); camera.lookAt(MX * 0.75, 0, MZ); camera.fov = 62; }
+    else if (me) { camera.position.set(me.x + Math.cos(me.th) * (me.half + 0.03), me.y + me.lift + 0.5, me.z + Math.sin(me.th) * (me.half + 0.03)); camera.lookAt(me.x + Math.cos(me.th) * 4, 0.5, me.z + Math.sin(me.th) * 4); camera.fov = 80; }
+  } else {                                                        // slow orbit behind the menus
+    const t = performance.now() / 9000; camera.position.set(MX + Math.cos(t) * 13, 8, MZ + Math.sin(t) * 11); camera.lookAt(MX, 0, MZ); camera.fov = 50;
+  }
+  camera.updateProjectionMatrix();
+  fadeEnds();
+  renderer.render(scene, camera);
+  if (state === 'picker') renderPreview();
+  if (state === 'play' || state === 'results') drawHud();
+}
+function drawHud() {
+  const s = summary(), me = game.me;
+  $('sb').textContent = s.blue.total; $('sr').textContent = s.red.total;
+  if (game.mode === 'free') { $('clock').textContent = '∞'; $('phase').textContent = 'FREE PLAY'; }
+  else { const left = Math.ceil(MATCH_T - game.t); $('clock').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; $('phase').textContent = PHASES[phaseIndex()][0]; }
+  for (const [id, a] of [['hb', 'blue'], ['hr', 'red']]) { const on = hubActive(a); $(id).textContent = on ? 'HUB ACTIVE' : 'HUB OFF'; $(id).className = on ? 'hubon' : 'huboff'; }
+  $('fuelbar').style.width = `${100 * me.hold.length / me.type.cap}%`;
+  $('fueltxt').textContent = `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : '');
+  const plan = shotPlan(me);
+  $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
+    : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive('blue') ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
+  $('camtxt').textContent = `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
+  let status = '';
+  if (me.pin > 0.3) status = `PIN ${(PIN_LIMIT - me.pin).toFixed(1)}s — BACK OFF`;
+  else if (me.atTower && !me.climb && me.type.climb) status = `AT TOWER — HOLD ${keyName(keys.climb)} TO CLIMB`;
+  else if (me.climb && me.climb < me.type.climb) status = 'KEEP HOLDING TO CLIMB HIGHER';
+  $('status').textContent = status; $('status').style.color = me.pin > 0.3 ? 'var(--red)' : 'var(--amber)';
+}
+let toastTimer = 0;
+function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.opacity = 0, 1800); }
+
+// ============================================================
+// MENUS
+// ============================================================
+function show(name) { for (const id of ['menu', 'picker', 'settings', 'pause', 'results']) $(id).classList.toggle('on', id === name); $('hud').classList.toggle('on', state === 'play' || state === 'results'); }
+function setPaused(v) { if (state !== 'play') return; paused = v; down.clear(); show(v ? 'pause' : null); }
+function choice(host, labels, get, set) {
+  const el = $(host); el.innerHTML = '';
+  labels.forEach((label, i) => { const b = document.createElement('button'); b.textContent = label; b.className = get() === i ? 'sel' : '';
+    b.onclick = () => { set(i); save('ra.opts', opts); choice(host, labels, get, set); }; el.appendChild(b); el.append(' '); });
+}
+const keyName = code => code.replace(/^Key|^Digit/, '').replace('Arrow', '').replace('ShiftLeft', 'Shift').replace('ControlLeft', 'Ctrl');
+function setKeysHint() {
+  $('keys').innerHTML = `${keyName(keys.forward)}${keyName(keys.left)}${keyName(keys.back)}${keyName(keys.right)} drive · ${keyName(keys.turnLeft)}/${keyName(keys.turnRight)} turn<br>` +
+    `${keyName(keys.intake)} intake · ${keyName(keys.shoot)} shoot · ${keyName(keys.climb)} climb · ${keyName(keys.blocker)} blocker<br>${keyName(keys.camera)} camera · ${keyName(keys.relative)} drive mode · ${keyName(keys.hideHud)} hide HUD · Esc pause`;
+  $('mename').textContent = game.me ? `${game.me.type.name.toUpperCase()} — ${game.me.type.tag}` : '';
+}
+function drawBinds() {
+  const el = $('binds'); el.innerHTML = '';
+  for (const a of Object.keys(DEFAULT_KEYS)) {
+    const row = document.createElement('div'), b = document.createElement('button');
+    row.textContent = KEY_LABELS[a]; b.textContent = rebinding === a ? 'press a key…' : keyName(keys[a]); b.className = rebinding === a ? 'sel' : '';
+    b.onclick = () => { rebinding = a; drawBinds(); }; row.appendChild(b); el.appendChild(row);
+  }
+}
+function drawMenu() {
+  choice('optMode', ['Timed match', 'Free play'], () => opts.mode === 'match' ? 0 : 1, i => opts.mode = i ? 'free' : 'match');
+  choice('optSize', ['Just a rival', '2 v 2', '3 v 3'], () => opts.size - 1, i => opts.size = i + 1);
+  choice('optSkill', SKILLS.map(s => s.name), () => opts.skill, i => opts.skill = i);
+  choice('optBrick', ['On', 'Off'], () => opts.brick ? 0 : 1, i => opts.brick = !i);
+  const lines = Object.entries(best).map(([k, v]) => { const [id, n] = k.split('.'); return `${ROBOTS.find(r => r.id === id)?.name || id} ${n}v${n}: ${v}`; });
+  $('best').textContent = lines.length ? 'Personal bests (fuel you scored) — ' + lines.join(' · ') : '';
+}
+
+// ---------- robot picker with a spinning preview and a start-position map ----------
+const pv = { renderer: new THREE.WebGLRenderer({ canvas: $('preview'), antialias: true, alpha: true }), scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(40, 2, 0.1, 20), bot: null };
+pv.scene.add(new THREE.HemisphereLight(0xffffff, 0x223044, 1.6)); const pl = new THREE.DirectionalLight(0xffffff, 1.5); pl.position.set(2, 4, 3); pv.scene.add(pl);
+const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.03, 40), mat(0x1c2636)); pad.position.y = -0.015; pv.scene.add(pad);
+function renderPreview() {
+  const c = $('preview'), w = c.clientWidth, h = c.clientHeight; if (!w) return;
+  if (c.width !== w * 2 || c.height !== h * 2) { pv.renderer.setSize(w * 2, h * 2, false); pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix(); }
+  if (pv.bot) pv.bot.rotation.y += 0.012;
+  pv.cam.position.set(2.1, 1.45, 2.1); pv.cam.lookAt(0.1, 0.3, 0); pv.renderer.render(pv.scene, pv.cam);
+}
+function drawPicker() {
+  const el = $('bots'); el.innerHTML = '';
+  ROBOTS.forEach((t, i) => { const b = document.createElement('button'); b.className = i === opts.robot ? 'sel' : ''; b.innerHTML = `${t.name}<small>${t.tag}</small>`;
+    b.onclick = () => { opts.robot = i; save('ra.opts', opts); drawPicker(); }; el.appendChild(b); });
+  const t = ROBOTS[opts.robot];
+  if (pv.bot) pv.scene.remove(pv.bot); pv.bot = buildRobotMesh(t, 'blue'); pv.scene.add(pv.bot);
+  $('bio').textContent = t.bio;
+  const bar = (name, frac, text) => `<div class="stat"><span>${name}</span><div class="bar"><i style="width:${Math.round(clamp(frac, 0.04, 1) * 100)}%"></i></div><b>${text}</b></div>`;
+  $('stats').innerHTML = bar('Speed', t.speed / 5, t.speed.toFixed(1)) + bar('Acceleration', t.accel / 15, t.accel) + bar('Hopper', t.cap / 55, t.cap) +
+    bar('Fire rate', t.rate / 12, t.rate + '/s') + bar('Accuracy', (t.acc - 0.75) / 0.25, Math.round(t.acc * 100) + '%') + bar('Climb', t.climb / 3, 'L' + t.climb) +
+    bar('Weight', t.mass / 2, t.mass.toFixed(1)) + `<p class="note" style="margin:10px 0 0">${t.tall ? 'Too tall for the trenches — crosses over the bumps.' : 'Fits under the trenches.'}${t.blocker ? ' Intake stows and a shot blocker deploys.' : ''}${t.sotm ? ' Shoots on the move.' : ''}</p>`;
+  drawMap();
+}
+function drawMap() {
+  const c = $('startmap'), g = c.getContext('2d'), k = c.height / W, t = ROBOTS[opts.robot];
+  g.fillStyle = '#16233a'; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = '#3d86ff'; g.lineWidth = 2; g.beginPath(); g.moveTo(LINE * k, 0); g.lineTo(LINE * k, c.height); g.stroke();
+  g.fillStyle = '#55657c'; for (const o of OBSTACLES) if (o.x < MX) { g.globalAlpha = o.kind === 'overhead' ? 0.45 : 1; g.fillRect((o.x - o.hx) * k, (o.z - o.hz) * k, o.hx * 2 * k, o.hz * 2 * k); }
+  g.globalAlpha = 1; g.fillStyle = '#b58a3c';
+  for (const s of [-1, 1]) g.fillRect((HUBX - BUMP_D / 2) * k, (MZ + s * (HUB / 2 + BUMP_W / 2) - BUMP_W / 2) * k, BUMP_D * k, BUMP_W * k);
+  g.strokeStyle = '#8c9bb0'; g.lineWidth = 1; g.strokeRect(0, (MZ + DEPOT_OFF - DEPOT_W / 2) * k, DEPOT_D * k, DEPOT_W * k);
+  g.fillStyle = '#ffb300'; g.fillRect((opts.sx - t.size / 2) * k, (opts.sz - t.size / 2) * k, t.size * k, t.size * k);
+  g.fillStyle = '#14110a'; g.beginPath(); g.moveTo((opts.sx + t.size / 2) * k, opts.sz * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz - 0.2) * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz + 0.2) * k); g.fill();
+}
+function placeStart(e) {
+  const c = $('startmap'), b = c.getBoundingClientRect(), k = b.height / W;
+  let x = (e.clientX - b.left) / k, z = (e.clientY - b.top) / k;
+  x = clamp(x, 0.6, LINE - 0.5); z = clamp(z, 0.6, W - 0.6);
+  if (Math.abs(z - MZ - TOWER_Z) < 1.2) x = Math.max(x, TOWER_D + 0.6);          // keep clear of the tower
+  opts.sx = x; opts.sz = z; save('ra.opts', opts); drawMap();
+}
+$('startmap').addEventListener('pointerdown', e => { e.target.setPointerCapture(e.pointerId); placeStart(e); });
+$('startmap').addEventListener('pointermove', e => { if (e.buttons) placeStart(e); });
+
+function startPlay() { newGame(); state = 'play'; paused = false; show(null); toast(game.mode === 'free' ? 'FREE PLAY' : 'AUTO — GO'); }
+let settingsFrom = 'menu';
+$('btnPick').onclick = () => { state = 'picker'; show('picker'); drawPicker(); };
+$('btnBack').onclick = () => { state = 'menu'; show('menu'); drawMenu(); };
+$('btnStart').onclick = startPlay;
+$('btnSettings').onclick = () => { settingsFrom = 'menu'; show('settings'); drawSettings(); };
+$('btnPauseSettings').onclick = () => { settingsFrom = 'pause'; show('settings'); drawSettings(); };
+$('btnSettingsDone').onclick = () => { rebinding = null; setKeysHint(); show(settingsFrom); if (settingsFrom === 'menu') drawMenu(); };
+$('btnResetKeys').onclick = () => { Object.assign(keys, DEFAULT_KEYS); save('ra.keys', keys); drawBinds(); };
+$('btnResume').onclick = () => setPaused(false);
+$('btnRestart').onclick = startPlay;
+$('btnQuit').onclick = $('btnMenu').onclick = () => { state = 'menu'; paused = false; setBrickLook(false); show('menu'); drawMenu(); };
+$('btnAgain').onclick = startPlay;
+function drawSettings() {
+  choice('optQuality', ['Low', 'Medium', 'High'], () => opts.quality, i => { opts.quality = i; applyQuality(); });
+  const caps = [0, 30, 60, 120, 240];
+  choice('optFps', ['Uncapped', '30', '60', '120', '240'], () => Math.max(0, caps.indexOf(opts.fps)), i => opts.fps = caps[i]);
+  drawBinds();
+}
+
+// ============================================================
+// MAIN LOOP -- fixed 60 Hz simulation, match clock counted in simulated time
+// ============================================================
+let acc = 0, last = performance.now(), lastDraw = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (opts.fps && now - lastDraw < 1000 / opts.fps - 1) return;
+  const dt = Math.min(0.1, (now - last) / 1000); last = now; lastDraw = now;
+  if (state === 'play' && !paused) {
+    if (game.bricked && now - game.brickAt > BRICK_SECONDS * 1000) finish();
+    acc += dt * (game.bricked ? BRICK_SLOWMO : 1); let n = 0;
+    while (acc >= STEP && n < 5 && state === 'play') { tick(); acc -= STEP; n++; }
+    if (n === 5) acc = 0;
+  }
+  render();
+}
+
+buildField(); loadFieldModel(); buildBalls(); applyQuality(); drawMenu(); show('menu');
+$('loading').remove();
+window.__game = { game, tick, opts, startPlay, summary, balls, brick, state: () => state, renderer, camera, scene, render, proc };   // for testing from the console
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
