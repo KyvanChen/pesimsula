@@ -42,7 +42,7 @@ The host's browser runs the whole match, so it ends for everyone if the host lea
 
 - `index.html` — the whole game.
 - `field.glb` — the official field, converted from the FIRST field CAD.
-- `robot_calgames.glb`, `robot_calgames.json` — the Elite Ball Knowledge robot and its measured linkage (turret, four-bar intake, shot blocker).
+- `robot_calgames.glb`, `robot_calgames.json` — the Elite Ball Knowledge robot and its measured linkage (turret, tilting shooter hood, four-bar intake, shot blocker).
 - `robot_reblitz.glb` — Re-Blitz, simplified from Team 2910's public CAD release, with stats from their 2026 tech binder.
 - `robot_shuttler.glb` — Peninsula Pups, a tall fuel shuttle with no shooter, simplified from its CAD.
 - `tools/build_field.py`, `tools/build_robot.py`, `tools/build_robot_static.py` — rebuild the models from STEP files. They need Python with `cascadio`, `trimesh` and `fast-simplification`.

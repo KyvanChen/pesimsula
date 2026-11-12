@@ -934,16 +934,21 @@ function buildModelRobot(type, alliance) {
   const swings = rig.swings.map(w => { const p = new THREE.Group(); p.position.set(w.pivot[0], w.pivot[1], 0); return p; });
   turret.position.set(...rig.turret.at);
   blocker.position.set(rig.plate.hinge[0], rig.plate.hinge[1], 0);           // hinged on the head
+  // The shooter hood tilts about the flywheel axle; its small gears ride on it and climb the fixed racks.
+  const hood = new THREE.Group(), pinion = new THREE.Group(), hr = rig.hood;
+  if (hr) { hood.position.set(hr.pivot[0], hr.pivot[1], 0); pinion.position.set(hr.pinion[0] - hr.pivot[0], hr.pinion[1] - hr.pivot[1], 0); hood.add(pinion); turret.add(hood); hood.rotation.z = hr.down; pinion.rotation.z = hr.down * hr.ratio; }      // rests down
   body.traverse(o => { if (o.isMesh) { o.castShadow = true; sorted.push([o, o.name + ' ' + o.parent.name]); } });
   for (const [o, name] of sorted) {
     const swing = name.match(/swing(\d+)/);
-    if (name.includes('turret')) turret.add(o);                              // already in turret axes
+    if (hr && name.includes('pinion')) { o.position.x -= hr.pinion[0]; o.position.y -= hr.pinion[1]; pinion.add(o); }
+    else if (hr && name.includes('hood')) { o.position.x -= hr.pivot[0]; o.position.y -= hr.pivot[1]; hood.add(o); }
+    else if (name.includes('turret') || name.includes('hood') || name.includes('pinion')) turret.add(o);     // already in turret axes
     else if (name.includes('blocker')) { o.position.sub(blocker.position); blocker.add(o); }
     else if (name.includes('head')) head.add(o);
     else if (swing) { const p = swings[+swing[1]]; o.position.sub(p.position); p.add(o); }
   }
   head.add(blocker); g.add(body, turret, head, ...swings);
-  Object.assign(g.userData, { turret, head, blocker, swings });
+  Object.assign(g.userData, { turret, head, blocker, swings, hood: hr && hood, pinion });
   bumpers();
   if (type.hopper) {                   // clear polycarbonate hopper sides
     const h = type.hopper, clear = new THREE.MeshStandardMaterial({ color: 0xdfeaf5, transparent: true, opacity: 0.2, roughness: 0.15, depthWrite: false });
@@ -1079,7 +1084,8 @@ function makeRobot(type, alliance, slot, human, x, z, label) {
   r.half = type.size / 2; r.radius = type.size * 0.56;
   r.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, 0.21, z));
   // The box reaches below the carpet: on a bump the level box would otherwise ride up over fuel and crush it.
-  world.createCollider(RAPIER.ColliderDesc.cuboid(r.half, 0.33, r.half).setTranslation(0, -0.14, 0).setFriction(0.2).setRestitution(0.05), r.body);
+  const hb = hitbox(type, 1);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(hb.back, 0.33, hb.side).setTranslation(0, -0.14, 0).setFriction(0.2).setRestitution(0.05), r.body);
   if (type.blocker && type.rig) {     // the level plate is a real obstacle for fuel in flight
     r.blockBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, -20, z));
     world.createCollider(RAPIER.ColliderDesc.cuboid(type.rig.plate.length / 2, 0.02, type.rig.plate.halfWidth).setRestitution(0.3), r.blockBody);
@@ -1108,15 +1114,24 @@ function moveRobot(r, dt) {
   r.x += r.vx * dt; r.z += r.vz * dt; r.th = wrap(r.th + r.w * dt);
   r.y = h; r.pitch += (Math.atan(slope) - r.pitch) * 0.25;
 }
+// What a robot takes up on the floor, in its own axes: bumpers at the back and sides, and at the front
+// whatever sticks out furthest (the intake or the bin). A stowed intake no longer sticks out.
+function hitbox(t, stow = 0, block = 0) {
+  const [fx, fz] = t.frame || [t.size - 0.08, t.size - 0.08], back = fx / 2 + 0.04, side = fz / 2 + 0.04;
+  const out = Math.max(fx / 2 + (t.reach || 0.16) + 0.03, (t.hopper?.x[1] ?? 0) + 0.01, back);
+  const plate = block > 0 && t.rig ? blockerUpAt(t)[0] + t.rig.plate.length / 2 : 0;      // a raised shot blocker reaches out over the front
+  return { back, side, front: Math.max(back + (out - back) * (1 - stow), back + (plate - back) * block) };
+}
 const isTall = r => r.type.tall || r.stow > 0.3;      // a stowed intake no longer fits under a trench
 function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
-  const c = Math.cos(r.th), s = Math.sin(r.th), dx = r.x - o.x, dz = r.z - o.z;
+  const c = Math.cos(r.th), s = Math.sin(r.th), hb = hitbox(r.type, r.stow, r.block), ex = (hb.front + hb.back) / 2, ox = (hb.front - hb.back) / 2;
+  const dx = r.x + ox * c - o.x, dz = r.z + ox * s - o.z;
   let bestPen = Infinity, nx = 0, nz = 0;
   for (const [ax, az] of [[1, 0], [0, 1], [c, s], [-s, c]]) {
     const reachO = o.hx * Math.abs(ax) + o.hz * Math.abs(az);
-    const reachR = r.half * (Math.abs(ax * c + az * s) + Math.abs(-ax * s + az * c));
+    const reachR = ex * Math.abs(ax * c + az * s) + hb.side * Math.abs(-ax * s + az * c);
     const gap = dx * ax + dz * az, pen = reachO + reachR - Math.abs(gap);
-    if (pen <= 0) return null;
+    if (pen <= 1e-6) return null;                // touching is not overlapping
     if (pen < bestPen) { bestPen = pen; const sg = gap >= 0 ? 1 : -1; nx = ax * sg; nz = az * sg; }
   }
   return [bestPen, nx, nz];
@@ -1132,9 +1147,10 @@ function collideField(r) {
       const vn = r.vx * nx + r.vz * nz; if (vn < 0) { r.vx -= vn * nx; r.vz -= vn * nz; }
       moved = true;
     }
-    const c = Math.abs(Math.cos(r.th)), s = Math.abs(Math.sin(r.th)), ext = r.half * (c + s);
-    if (r.x < ext) { r.x = ext; if (r.vx < 0) r.vx = 0; moved = true; } else if (r.x > L - ext) { r.x = L - ext; if (r.vx > 0) r.vx = 0; moved = true; }
-    if (r.z < ext) { r.z = ext; if (r.vz < 0) r.vz = 0; moved = true; } else if (r.z > W - ext) { r.z = W - ext; if (r.vz > 0) r.vz = 0; moved = true; }
+    const co = Math.cos(r.th), si = Math.sin(r.th), hb = hitbox(r.type, r.stow, r.block), ex = (hb.front + hb.back) / 2, ox = (hb.front - hb.back) / 2;
+    const extX = ex * Math.abs(co) + hb.side * Math.abs(si), extZ = ex * Math.abs(si) + hb.side * Math.abs(co), cx = ox * co, cz = ox * si;      // the box sits ahead of the robot's centre
+    if (r.x + cx < extX) { r.x = extX - cx; if (r.vx < 0) r.vx = 0; moved = true; } else if (r.x + cx > L - extX) { r.x = L - extX - cx; if (r.vx > 0) r.vx = 0; moved = true; }
+    if (r.z + cz < extZ) { r.z = extZ - cz; if (r.vz < 0) r.vz = 0; moved = true; } else if (r.z + cz > W - extZ) { r.z = W - extZ - cz; if (r.vz > 0) r.vz = 0; moved = true; }
     if (!moved) return; r.contact = true;
   }
   if (OBSTACLES.some(o => (o.kind === 'solid' || isTall(r)) && overlap(r, o))) { r.x = r.px; r.z = r.pz; r.th = r.pth; r.vx = r.vz = r.w = 0; }
@@ -1431,7 +1447,7 @@ function newGame(roster, mode) {
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
   if (roster) {                         // multiplayer: the host decided who drives what
     for (const e of roster) {
-      const type = ROBOTS.find(t => t.id === e.type) || ROBOTS[0], sx = LINE - type.size / 2;
+      const type = ROBOTS.find(t => t.id === e.type) || ROBOTS[0], sx = LINE - hitbox(type).front;
       const [x, z] = e.alliance === 'blue' ? [sx, zs[e.slot]] : [L - sx, W - zs[e.slot]];
       const r = makeRobot(type, e.alliance, e.slot, e.pid === net.me, x, z, e.name);
       r.pid = e.pid; r.player = e.pid != null; r.remote = r.player && !r.human; r.input = null;
@@ -1441,8 +1457,8 @@ function newGame(roster, mode) {
     game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, ...startSpot(opts.sx, opts.sz, ROBOTS[opts.robot])); game.me.player = true;
     game.robots.push(game.me);
     for (let s = 0; s < opts.size; s++) {
-      if (s > 0) { const t = pick('blue'); game.robots.push(makeRobot(t, 'blue', s, false, LINE - t.size / 2, zs[s])); }
-      const t = pick('red'); game.robots.push(makeRobot(t, 'red', s, false, L - LINE + t.size / 2, W - zs[s]));
+      if (s > 0) { const t = pick('blue'); game.robots.push(makeRobot(t, 'blue', s, false, LINE - hitbox(t).front, zs[s])); }
+      const t = pick('red'); game.robots.push(makeRobot(t, 'red', s, false, L - LINE + hitbox(t).front, W - zs[s]));
     }
   }
   for (const r of game.robots) collideField(r);
@@ -1586,6 +1602,12 @@ function render() {
     if (u.turret) {
       const rig = r.type.rig, [sx, sy] = headShift(rig, r.stow);
       u.turret.rotation.y = -(r.aim - r.th);
+      if (u.hood) {                      // hood: down for a close, steep shot; it lifts as the target gets farther away
+        const plan = shotPlan(r), want = plan.mode === 'pass' ? 1 : clamp((plan.d - 1.3) / 3.7, 0, 1);
+        r.hood = (r.hood || 0) + clamp(want - (r.hood || 0), -0.035, 0.035);
+        const a = rig.hood.down + (rig.hood.up - rig.hood.down) * r.hood;
+        u.hood.rotation.z = a; u.pinion.rotation.z = a * rig.hood.ratio;        // the gears roll along the racks as the hood moves
+      }
       u.swings.forEach((p, i) => { p.rotation.z = rig.swings[i].swing * r.stow; });   // arms swing on their pivots
       u.head.position.set(sx, sy, 0);                                                 // head stays level
       u.blocker.rotation.z = rig.plate.swing * (1 - r.block);                         // hanging down -> level
@@ -1701,17 +1723,18 @@ function drawMap() {
   g.globalAlpha = 1; g.fillStyle = '#b58a3c';
   for (const s of [-1, 1]) g.fillRect((HUBX - BUMP_D / 2) * k, (MZ + s * (HUB / 2 + BUMP_W / 2) - BUMP_W / 2) * k, BUMP_D * k, BUMP_W * k);
   g.strokeStyle = '#8c9bb0'; g.lineWidth = 1; g.strokeRect(0, (MZ + DEPOT_OFF - DEPOT_W / 2) * k, DEPOT_D * k, DEPOT_W * k);
-  g.fillStyle = '#63bfff'; g.fillRect((opts.sx - t.size / 2) * k, (opts.sz - t.size / 2) * k, t.size * k, t.size * k);
-  g.fillStyle = '#051026'; g.beginPath(); g.moveTo((opts.sx + t.size / 2) * k, opts.sz * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz - 0.2) * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz + 0.2) * k); g.fill();
+  const hb = hitbox(t);
+  g.fillStyle = '#63bfff'; g.fillRect((opts.sx - hb.back) * k, (opts.sz - hb.side) * k, (hb.back + hb.front) * k, hb.side * 2 * k);
+  g.fillStyle = '#051026'; g.beginPath(); g.moveTo((opts.sx + hb.front - 0.05) * k, opts.sz * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz - 0.2) * k); g.lineTo((opts.sx + 0.05) * k, (opts.sz + 0.2) * k); g.fill();
 }
-// A robot starts with its front bumper on its starting line. One that fits under a trench may also
+// A robot starts with its front edge on its starting line. One that fits under a trench may also
 // start past the line, as long as it is under the trench.
 function startSpot(x, z, t) {
-  const half = t.size / 2, onLine = LINE - half, lo = TRENCH_IN + half + 0.03, hi = MZ - half - 0.05;
+  const hb = hitbox(t), half = hb.side, onLine = LINE - hb.front, lo = TRENCH_IN + half + 0.03, hi = MZ - half - 0.05;
   z = clamp(z, half + 0.05, W - half - 0.05);
   if (!t.tall && lo <= hi && x > onLine + 0.05 && Math.abs(z - MZ) > TRENCH_IN - 0.25) {
     const s = z < MZ ? -1 : 1;
-    return [clamp(x, onLine, LINE + TRENCH_D - half), MZ + s * clamp(Math.abs(z - MZ), lo, hi)];
+    return [clamp(x, onLine, LINE + TRENCH_D - hb.front), MZ + s * clamp(Math.abs(z - MZ), lo, hi)];
   }
   return [onLine, z];
 }

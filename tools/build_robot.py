@@ -2,7 +2,7 @@
 """
 Turns a robot CAD assembly (STEP) into a light GLB the game can animate.
 
-    py -3.12 tools/build_robot.py calgames FULL.step --shooter SHOOTER.step --intake INTAKE.step
+    py -3.12 tools/build_robot.py calgames FULL.step --shooter SHOOTER.step --intake INTAKE.step --hood HOOD.step
 
 Needs: pip install cascadio trimesh fast-simplification
 
@@ -14,6 +14,8 @@ used to split the robot into separate node groups so the game can move them:
     head_*     the intake head; stays level, carried by the four-bar
     swingN_*   each pivoting link (the two four-bar arms, the lower roller arm)
     blocker_*  the shot-blocker plate, hinged on the head
+    hood_*     the shooter hood (--hood: the parts of the shooter that tilt), in turret axes
+    pinion_*   the small gears on the hood that climb the fixed rack arcs
 
 A robot_<name>.json is written beside the GLB with the measured pivots and swing angles.
 
@@ -36,13 +38,14 @@ from trimesh.visual.material import PBRMaterial
 
 DROP = re.compile(r"CONN-|R0402|LED0805|C0402|C0603|SHCS|BHCS|Screw|Bolt|Washer|\bNut\b|Bearing|Spacer|"
                   r"retaining|Rivet|^102742|^id\d+|ZX360|RR-MSAFPM|regulator|Shaft Collar", re.I)
-BUDGET = {"body": 60_000, "turret": 26_000, "head": 22_000, "arm": 5_000, "sub": 8_000, "blocker": 2_000}
+BUDGET = {"body": 60_000, "turret": 16_000, "turretrack": 7_000, "hood": 14_000, "pinion": 3_000, "head": 22_000, "arm": 5_000, "sub": 8_000, "blocker": 2_000}
 
 ap = argparse.ArgumentParser()
 ap.add_argument("name")
 ap.add_argument("full")
 ap.add_argument("--shooter")
 ap.add_argument("--intake")
+ap.add_argument("--hood")
 args = ap.parse_args()
 here = os.path.dirname(os.path.abspath(__file__))
 out = os.path.join(here, "..", f"robot_{args.name}.glb")
@@ -253,8 +256,33 @@ if args.shooter:
     to_turret = np.array([[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 0], [0, 0, 0, 1]], dtype=float)
     extra = parts_of(convert(args.shooter, "_turret"))
     for r in extra:
-        r["verts"] = trimesh.transform_points(r["verts"], to_turret)
         r["group"] = "turret"
+    if args.hood:
+        # The hood file holds the parts that tilt, in the same place as in the shooter file. The whole
+        # hood turns about the main flywheel axle; its two small gears climb the fixed rack arcs, which
+        # are centred on that axle. Measured in the shooter's own axes (X across, Y fore-aft, Z up).
+        moving = {(len(h["faces"]), tuple(np.round(h["centroid"], 3))) for h in parts_of(convert(args.hood, "_hood"))}
+        for r in extra:
+            if (len(r["faces"]), tuple(np.round(r["centroid"], 3))) in moving:
+                r["group"] = "pinion" if "10 teeth" in r["name"] else "hood"
+            elif "176 teeth" in r["name"]:
+                r["group"] = "turretrack"
+        wheel = np.vstack([r["verts"] for r in extra if '4" Stealth Wheel' in r["name"]])
+        axle = (wheel.min(0) + wheel.max(0))[1:] / 2
+        turn = lambda pts: np.degrees(np.arctan2(pts[:, 2] - axle[1], pts[:, 1] - axle[0])) % 360
+        rack = np.vstack([r["verts"] for r in extra if r["group"] == "turretrack"])
+        reach = np.linalg.norm(rack[:, 1:] - axle, axis=1)
+        teeth = turn(rack[reach > reach.max() - 0.004])
+        gear = np.vstack([r["verts"] for r in extra if r["group"] == "pinion"])
+        hub = (gear.min(0) + gear.max(0)) / 2
+        at = float(turn(hub[None])[0])
+        pitch = np.linalg.norm(hub[1:] - axle) * 176 / 186          # rack pitch radius (176 teeth against 10)
+        margin = 3.0                                                # degrees kept clear of each end of the rack
+        rig["hood"] = dict(pivot=axle.tolist(), pinion=hub[1:].tolist(), ratio=17.6,
+                           down=float(np.radians(teeth.max() - margin - at)), up=float(np.radians(min(0.0, teeth.min() + margin - at))))
+        print(f"hood: axle {axle}, pinion at {at:.1f} deg, rack teeth {teeth.min():.1f}..{teeth.max():.1f} deg, pitch radius {pitch:.3f}")
+    for r in extra:
+        r["verts"] = trimesh.transform_points(r["verts"], to_turret)
     info["turret"] = (np.min([r["verts"].min(0) for r in extra], 0), np.max([r["verts"].max(0) for r in extra], 0), len(extra))
 
 # Mirrored parts can be missing from the export (the converter skips them). Where a large flat
