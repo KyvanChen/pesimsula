@@ -20,7 +20,7 @@ Then open http://localhost:5173. Opening `index.html` directly from disk does no
 | J / L, or arrow keys | Turn |
 | Left Shift | Intake |
 | Space | Shoot |
-| K | Stow intake and raise the shot blocker |
+| K | Elite Ball Knowledge: stow intake and raise the shot blocker. Peninsula Pups: hold to eject fuel |
 | C | Climb |
 | V | Change camera |
 | F | Field-relative / robot-relative |
@@ -40,13 +40,14 @@ The host's browser runs the whole match, so it ends for everyone if the host lea
 
 - `index.html` — the whole game.
 - `field.glb` — the official field, converted from the FIRST field CAD.
-- `robot_calgames.glb`, `robot_calgames.json` — the Cal Games robot and its measured linkage (turret, four-bar intake, shot blocker).
+- `robot_calgames.glb`, `robot_calgames.json` — the Elite Ball Knowledge robot and its measured linkage (turret, four-bar intake, shot blocker).
 - `robot_reblitz.glb` — Re-Blitz, simplified from Team 2910's public CAD release, with stats from their 2026 tech binder.
+- `robot_shuttler.glb` — Peninsula Pups, a tall fuel shuttle with no shooter, simplified from its CAD.
 - `tools/build_field.py`, `tools/build_robot.py`, `tools/build_robot_static.py` — rebuild the models from STEP files. They need Python with `cascadio`, `trimesh` and `fast-simplification`.
 
 ## Notes
 
-Robot speeds, capacities and accuracy are estimates. Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
+Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose pile that shifts as the robot drives; the Elite Ball Knowledge and Peninsula Pups hoppers are open, so anything piled above their walls rolls back onto the field, while Re-Blitz stops at 50. The AI never drives Peninsula Pups. Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
 
 ## Credits
 

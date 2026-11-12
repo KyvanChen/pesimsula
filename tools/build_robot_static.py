@@ -59,6 +59,8 @@ parts = []
 for node in graph.nodes_geometry:
     transform, geom = graph[node]
     mesh = scene.geometry[geom]
+    if not hasattr(mesh, "faces"):         # sketch curves, not solids
+        continue
     try:
         rgba = tuple(int(c) for c in mesh.visual.material.main_color)
     except Exception:

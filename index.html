@@ -256,9 +256,10 @@ const COL = { blue: 0x3d86ff, red: 0xff3d5a };
 // Original robots -- generic archetypes, not modelled on any real team.
 const ROBOTS = [
   // Built from the team's own CAD (tools/build_robot.py). Stats are estimates, not measured.
-  { id: 'calgames', name: 'Cal Games', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
-    model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true,
+  { id: 'calgames', name: 'Elite Ball Knowledge', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
+    model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true, overflow: true,
     // Fuel sits low at the front, over the rollers and out into the intake; it shuffles back when the intake stows.
+    // There is no hard limit: past about 30 the pile is higher than the walls (wall) and fuel rolls off.
     hopper: { x: [0.0, 0.62], z: [-0.31, 0.31], y: 0.19, wall: 0.47, walls: [-0.02, 0.36], stowBack: 0.25 },
     bio: 'A turret that tracks the target and shoots on the move, over a wide roller intake. The intake stows on its four-bar, then the shot blocker swings level. No climber.' },
   // Team 2910's Re-Blitz, from their public CAD and 2026 tech binder (tools/build_robot_static.py).
@@ -267,10 +268,17 @@ const ROBOTS = [
     model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55,
     muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156,        // four-wide shooter that throws out of the back, away from the intake
     // Inside the polycarbonate hopper: four fuel wide, from the shooter tower out over the intake.
-    // The floor climbs over the intake, and the top layer stays clear of the hood.
-    hopper: { x: [-0.125, 0.645], z: [-0.311, 0.311], y: 0.14, slope: [0.3, 0.3], topFrom: 0.1 },
+    // The floor climbs over the intake, so fuel rolls back toward the shooter.
+    hopper: { x: [-0.125, 0.645], z: [-0.311, 0.311], y: 0.14, slope: [0.3, 0.3] },
     bio: 'A wide slap-down intake feeds a 50-fuel hopper and a four-wide shooter that empties it at 30 a second. Fits under the trench. No climber.' },
+  // A fuel shuttle, from its CAD (tools/build_robot_static.py). No shooter: it fills a tall open bin and
+  // pushes the fuel back out through the intake. Frame and bin sizes are measured; the rest are estimates.
+  { id: 'shuttler', name: 'Peninsula Pups', tag: 'Fuel shuttle', color: 0xff7a1a, size: 0.88, speed: 4.4, accel: 11, turn: 6, cap: 80, rate: 18, acc: 0.9, tall: true, climb: 0, mass: 1.5,
+    model: 'robot_shuttler.glb', fixed: true, shuttle: true, overflow: true, frame: [0.675, 0.72], reach: 0.22,
+    hopper: { x: [-0.33, 0.635], z: [-0.35, 0.35], y: 0.215, wall: 0.749 },
+    bio: 'A slap-down intake under a tall open bin that reaches out over the intake. No shooter: it carries fuel and ejects it out of the front. Too tall for the trenches.' },
 ];
+const aiRobot = () => { const list = ROBOTS.filter(t => !t.shuttle); return list[Math.floor(Math.random() * list.length)]; };   // the AI cannot play a robot with no shooter
 const SKILLS = [
   { name: 'Rookie', speed: 0.45, acc: 0.6, rate: 0.35, replan: 0.6, fill: 0.9 },
   { name: 'Regional', speed: 0.65, acc: 0.85, rate: 0.55, replan: 0.4, fill: 0.7 },
@@ -283,7 +291,7 @@ const SKILLS = [
 const DEFAULT_KEYS = { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', turnLeft: 'KeyJ', turnRight: 'KeyL',
   intake: 'ShiftLeft', shoot: 'Space', climb: 'KeyC', blocker: 'KeyK', camera: 'KeyV', relative: 'KeyF', hideHud: 'KeyH', reset: 'KeyR' };
 const KEY_LABELS = { forward: 'Drive forward', back: 'Drive back', left: 'Strafe left', right: 'Strafe right', turnLeft: 'Turn left', turnRight: 'Turn right',
-  intake: 'Intake (hold)', shoot: 'Shoot / pass (hold)', climb: 'Climb (hold)', blocker: 'Stow intake + shot blocker', camera: 'Change camera', relative: 'Field / robot relative', hideHud: 'Hide HUD', reset: 'Reset field (free play)' };
+  intake: 'Intake (hold)', shoot: 'Shoot / pass (hold)', climb: 'Climb (hold)', blocker: 'Shot blocker (Elite Ball Knowledge) / eject fuel (Peninsula Pups, hold)', camera: 'Change camera', relative: 'Field / robot relative', hideHud: 'Hide HUD', reset: 'Reset field (free play)' };
 function load(key, fallback) { try { return Object.assign({}, fallback, JSON.parse(localStorage.getItem(key) || '{}')); } catch { return { ...fallback }; } }
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window */ } }
 const keys = load('ra.keys', DEFAULT_KEYS);
@@ -416,7 +424,7 @@ function hostStart() {
     const drivers = net.players.filter(p => p.alliance === a).slice(0, 3), size = Math.max(opts.size, drivers.length);
     for (let slot = 0; slot < size; slot++) {
       const p = drivers[slot];
-      roster.push(p ? { type: p.type, alliance: a, slot, pid: p.pid, name: p.name } : { type: ROBOTS[Math.floor(Math.random() * ROBOTS.length)].id, alliance: a, slot, pid: null });
+      roster.push(p ? { type: p.type, alliance: a, slot, pid: p.pid, name: p.name } : { type: aiRobot().id, alliance: a, slot, pid: null });
     }
   }
   net.ticks = 0;
@@ -425,12 +433,13 @@ function hostStart() {
 }
 function readRemote(r) {              // controls from another player's browser, limited to what the robot can do
   const c = r.cmd, i = r.input, v = r.type.speed;
-  if (!i || performance.now() - i.at > 500) { Object.assign(c, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); return; }
+  if (!i || performance.now() - i.at > 500) { Object.assign(c, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); if (r.type.shuttle) r.blockOn = false; return; }
   const [vx, vz, w, flags] = i.c.map(Number), sp = Math.hypot(vx, vz) || 0, k = sp > v ? v / sp : 1;
   c.vx = (vx || 0) * k; c.vz = (vz || 0) * k; c.w = clamp(w || 0, -r.type.turn, r.type.turn);
   c.intake = !!(flags & 1); c.shoot = !!(flags & 2); c.climb = !!(flags & 4);
   const block = !!(flags & 8);
-  if (r.type.blocker && block !== r.blockOn && !(block && underTrench(r.x, r.z))) r.blockOn = block;
+  if (r.type.shuttle) r.blockOn = block;
+  else if (r.type.blocker && block !== r.blockOn && !(block && underTrench(r.x, r.z))) r.blockOn = block;
 }
 // Snapshot layout: header 18 bytes, 51 bytes a robot, 6 bytes a fuel (millimetres; held fuel names its robot and slot).
 const ROBOT_FLOATS = ['x', 'y', 'z', 'th', 'pitch', 'lift', 'aim', 'stow', 'block', 'pin'], ROBOT_BYTES = 51;
@@ -526,6 +535,7 @@ function applySnapshot(a) {           // blend from the previous snapshot to the
 function clientFrame(now) {
   const nx = net.next, pv = net.prev;
   if (nx) applySnapshot(pv ? clamp((now - nx.at) / Math.max(30, nx.at - pv.at), 0, 1) : 1);
+  if (nx) { stepHoppers(clamp((now - (net.pileAt || now)) / 1000, 0.004, 0.034), false); net.pileAt = now; }
   const me = game.me; if (!me || !net.host?.open || now - net.sent < 15) return;
   net.sent = now;
   if (paused) Object.assign(me.cmd, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); else readHuman(me);
@@ -717,7 +727,8 @@ function stageFuel() {
   returning.length = 0;
   for (let i = 0; i < FUEL; i++) takeBall(i);
   let next = 0;
-  for (const r of game.robots) { r.hold = []; for (let k = 0; k < Math.min(PRELOAD, r.type.cap); k++) r.hold.push(next++); }
+  for (const r of game.robots) { r.hold = []; for (let k = 0; k < Math.min(PRELOAD, r.type.cap); k++) { pos[next * 3] = PRELOADED; r.hold.push(next++); } }
+  heldBy.fill(0);
   const sp = BALL_R * 2 + 0.008;
   for (const a of ['blue', 'red']) {
     for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {         // 24 in the depot
@@ -836,20 +847,84 @@ function buildRobotMesh(type, alliance) {
   return g;
 }
 
-// Slots where held fuel sits, in robot axes: a grid filling the hopper, layer on layer.
-function hopperSlots(type) {
-  const s = type.size, h = type.hopper || { x: [-s * 0.3, s * 0.22], z: [-s * 0.27, s * 0.27], y: 0.26 };
-  const step = BALL_R * 2 + 0.004, layer = [];
-  for (let x = h.x[0] + BALL_R; x <= h.x[1] - BALL_R + 1e-6; x += step) for (let z = h.z[0] + BALL_R; z <= h.z[1] - BALL_R + 1e-6; z += step)
-    if (!h.skip || !(x > h.skip[0] && x < h.skip[1] && z > h.skip[2] && z < h.skip[3])) layer.push([x, z]);
-  const out = [];
-  for (let n = 0; out.length < type.cap && n < 12; n++) for (const [x, z] of layer) {
-    if (out.length >= type.cap || (n >= 2 && h.topFrom !== undefined && x < h.topFrom)) continue;
-    const floor = h.y + (h.slope ? Math.max(0, x - h.slope[0]) * h.slope[1] : 0);
-    out.push([x + (n % 2) * 0.02, floor + BALL_R + n * step * 0.86, z + (n % 2) * 0.02]);
-  }
-  while (out.length < type.cap) out.push(out[out.length - 1]);
-  return out;
+// ---------- fuel in the hopper ----------
+// Held fuel is a loose pile, simulated in each robot's own axes: gravity, the robot's acceleration,
+// fuel against fuel, and the hopper floor and walls. Positions are kept per fuel, so the host and
+// every client each run their own copy; only who holds what goes over the network.
+const hp = new Float32Array(FUEL * 3), hv = new Float32Array(FUEL * 3), feeding = new Float32Array(FUEL), heldBy = new Uint8Array(FUEL), stillHeld = new Uint8Array(FUEL);
+const INTAKE_RATE = 12;                   // fuel a second through the intake
+const FEED_T = 0.2, FEED_V = 1.0;        // how long and how fast the rollers push each fuel in
+const PRELOADED = 1e6;                 // marks fuel that starts in the hopper and did not come in through the intake
+function hopperOf(r) { const s = r.type.size; return r.type.hopper || { x: [-s * 0.3, s * 0.22], z: [-s * 0.27, s * 0.27], y: 0.26 }; }
+function stepHoppers(dt, spill) {      // spill: fuel that tops the walls leaves the robot (decided on the host only)
+  const D = BALL_R * 2, damp = Math.pow(0.02, dt);
+  stillHeld.fill(0);
+  game.robots.forEach((r, ri) => {
+    const h = hopperOf(r), back = (h.stowBack || 0) * r.stow, co = Math.cos(r.th), si = Math.sin(r.th);
+    const x0 = h.x[0] - back + BALL_R, x1 = h.x[1] - back - BALL_R, z0 = h.z[0] + BALL_R, z1 = h.z[1] - BALL_R;
+    const open = r.type.overflow && h.wall !== undefined, rim = open ? h.wall : Infinity;
+    const floorAt = x => h.y + BALL_R + (h.slope ? Math.max(0, x + back - h.slope[0]) * h.slope[1] : 0);
+    // how the robot is accelerating, seen from inside it
+    let vx = (r.x - (r.hx ?? r.x)) / dt, vz = (r.z - (r.hz ?? r.z)) / dt;
+    if (Math.hypot(vx, vz) > 9) vx = vz = 0;                                       // a reset or respawn, not driving
+    let ax = (vx - (r.hvx || 0)) / dt, az = (vz - (r.hvz || 0)) / dt; const am = Math.hypot(ax, az);
+    if (am > 14) { ax *= 14 / am; az *= 14 / am; }
+    r.hx = r.x; r.hz = r.z; r.hvx = vx; r.hvz = vz;
+    const gx = -(ax * co + az * si), gz = -(-ax * si + az * co), hold = r.hold, n = hold.length;
+    for (let k = 0; k < n; k++) {
+      const i = hold[k], a = i * 3; stillHeld[i] = 1;
+      if (heldBy[i] !== ri + 1) {                // new arrival: the rollers drive it in at floor level, just behind the intake
+        heldBy[i] = ri + 1;
+        const pre = pos[a] === PRELOADED, dx = pos[a] - r.x, dz = pos[a + 2] - r.z;
+        const x = pre ? x0 + Math.random() * (x1 - x0) : x1 + BALL_R;
+        const z = pre ? z0 + Math.random() * (z1 - z0) : clamp(-dx * si + dz * co, z0, z1);
+        hp[a] = x; hp[a + 1] = floorAt(Math.min(x, x1)) + (pre ? Math.random() * 0.3 : 0); hp[a + 2] = z; hv[a] = hv[a + 1] = hv[a + 2] = 0;
+        feeding[i] = pre ? 0 : FEED_T;
+      }
+      if (feeding[i] > 0) { feeding[i] -= dt; hv[a] = -FEED_V; hv[a + 1] = 0; hv[a + 2] = 0; continue; }       // still in the rollers
+      hv[a] = (hv[a] + gx * dt) * damp; hv[a + 1] = (hv[a + 1] - G * dt) * damp; hv[a + 2] = (hv[a + 2] + gz * dt) * damp;
+      stillHeld[i] = 1;
+    }
+    const from = new Float32Array(n * 3);
+    for (let k = 0; k < n; k++) { const a = hold[k] * 3; for (let j = 0; j < 3; j++) { from[k * 3 + j] = hp[a + j]; hp[a + j] += hv[a + j] * dt; } }
+    for (let pass = 0; pass < 5; pass++) {
+      for (let k = 0; k < n; k++) {
+        const a = hold[k] * 3;
+        for (let m = k + 1; m < n; m++) {
+          const c = hold[m] * 3, dx = hp[c] - hp[a], dy = hp[c + 1] - hp[a + 1], dz = hp[c + 2] - hp[a + 2], d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 >= D * D) continue;
+          const d = Math.sqrt(d2), fa = feeding[hold[k]] > 0, fc = feeding[hold[m]] > 0;
+          const pa = (D - d) * (fa === fc ? 0.5 : fa ? 0 : 1), pc = D - d - pa;      // fuel in the rollers does not give way
+          const nx = d > 1e-5 ? dx / d : 0, ny = d > 1e-5 ? dy / d : 1, nz = d > 1e-5 ? dz / d : 0;
+          hp[a] -= nx * pa; hp[a + 1] -= ny * pa; hp[a + 2] -= nz * pa; hp[c] += nx * pc; hp[c + 1] += ny * pc; hp[c + 2] += nz * pc;
+        }
+      }
+      for (let k = 0; k < n; k++) {
+        const a = hold[k] * 3;
+        if (feeding[hold[k]] > 0) hp[a + 2] = clamp(hp[a + 2], z0, z1);
+        else if (hp[a + 1] <= rim) { hp[a] = clamp(hp[a], x0, x1); hp[a + 2] = clamp(hp[a + 2], z0, z1); }      // above the walls nothing holds it in
+        const f = floorAt(clamp(hp[a], x0, x1)); if (hp[a + 1] < f) hp[a + 1] = f;
+      }
+    }
+    for (let k = n - 1; k >= 0; k--) {
+      const i = hold[k], a = i * 3;
+      for (let j = 0; j < 3; j++) hv[a + j] = clamp((hp[a + j] - from[k * 3 + j]) / dt, -2.5, 2.5);
+      if (feeding[i] > 0) continue;
+      const out = hp[a] < x0 - BALL_R ? [-1, 0] : hp[a] > x1 + BALL_R ? [1, 0] : hp[a + 2] < z0 - BALL_R ? [0, -1] : hp[a + 2] > z1 + BALL_R ? [0, 1] : null;
+      if (!out || !spill || !open) { if (out) { hp[a] = clamp(hp[a], x0 - BALL_R, x1 + BALL_R); hp[a + 2] = clamp(hp[a + 2], z0 - BALL_R, z1 + BALL_R); } continue; }
+      // over the wall: back onto the field, carrying the robot's motion plus a nudge outward
+      const lx = hp[a] + out[0] * 0.04, lz = hp[a + 2] + out[1] * 0.04, lvx = hv[a] + out[0] * 0.7, lvz = hv[a + 2] + out[1] * 0.7;
+      hold.splice(k, 1); heldBy[i] = 0; stillHeld[i] = 0; r.spilled = (r.spilled || 0) + 1;
+      putBall(i, r.x + lx * co - lz * si, r.y + r.lift + hp[a + 1], r.z + lx * si + lz * co, vx + lvx * co - lvz * si, Math.max(0, hv[a + 1]), vz + lvx * si + lvz * co);
+    }
+  });
+  for (let i = 0; i < FUEL; i++) if (!stillHeld[i]) heldBy[i] = 0;
+}
+// The shooter is fed from the pile: the fuel nearest its mouth goes first.
+function feedBall(r, x, z) {
+  let best = 0, score = Infinity;
+  r.hold.forEach((i, k) => { const a = i * 3, d = heldBy[i] ? (hp[a] - x) ** 2 + (hp[a + 2] - z) ** 2 + hp[a + 1] * 0.2 : 99; if (d < score) { score = d; best = k; } });
+  return r.hold.splice(best, 1)[0];
 }
 function makeRobot(type, alliance, slot, human, x, z, label) {
   const r = { type, alliance, slot, human, x, z, th: alliance === 'blue' ? 0 : Math.PI, vx: 0, vz: 0, w: 0, y: 0, pitch: 0, lift: 0,
@@ -857,7 +932,7 @@ function makeRobot(type, alliance, slot, human, x, z, label) {
     stats: { scored: 0, shots: 0, passes: 0, intaken: 0 },
     cmd: { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false },
     ai: { mode: 'score', goal: null, target: null, replan: 0, stuck: 0, jig: 0, jigAng: 0, chase: 0, last: 0, avoid: null, climbAt: 14 + Math.random() * 8 } };
-  r.half = type.size / 2; r.radius = type.size * 0.56; r.slots = hopperSlots(type);
+  r.half = type.size / 2; r.radius = type.size * 0.56;
   r.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, 0.21, z));
   // The box reaches below the carpet: on a bump the level box would otherwise ride up over fuel and crush it.
   world.createCollider(RAPIER.ColliderDesc.cuboid(r.half, 0.33, r.half).setTranslation(0, -0.14, 0).setFriction(0.2).setRestitution(0.05), r.body);
@@ -938,18 +1013,30 @@ function pinCheck(p, v, nx, nz) {      // p shoving v into a wall or field eleme
 
 // ---------- intake / shooter / climb ----------
 function runIntake(r) {
-  const free = r.type.cap - r.hold.length;
-  if (!r.cmd.intake || free <= 0 || r.climb || r.stow > 0.1) return;
+  const free = (r.type.overflow ? 150 : r.type.cap) - r.hold.length;      // an open hopper keeps taking fuel and spills the extra
+  if (!r.cmd.intake || free <= 0 || r.climb || r.stow > 0.1 || ejecting(r)) return;
   const c = Math.cos(r.th), s = Math.sin(r.th), front = r.half + (r.type.reach || 0.16), back = r.half - 0.08, halfW = r.half * 0.85;
-  let taken = 0;
-  for (let i = 0; i < FUEL && taken < free; i++) {
+  // The rollers pass fuel at a steady rate; anything more waits in front of the intake.
+  r.fed = Math.min(1.5, (r.fed || 0) + INTAKE_RATE * STEP);
+  let taken = 0; const room = Math.min(free, Math.floor(r.fed));
+  for (let i = 0; i < FUEL && taken < room; i++) {
     if (!balls[i].on || pos[i * 3 + 1] > 0.34) continue;
     const dx = pos[i * 3] - r.x, dz = pos[i * 3 + 2] - r.z;
     if (Math.abs(dx) > front || Math.abs(dz) > front) continue;
     const lx = dx * c + dz * s, lz = -dx * s + dz * c;
     if (lx >= back && lx <= front && Math.abs(lz) <= halfW) { takeBall(i); pos[i * 3 + 1] = -50; r.hold.push(i); taken++; }
   }
-  r.stats.intaken += taken;
+  r.fed -= taken; r.stats.intaken += taken;
+}
+// A shuttle has no shooter: it runs the intake backwards and rolls fuel out of the front, across its whole width.
+const ejecting = r => r.type.shuttle && (r.blockOn || r.cmd.shoot);
+function eject(r) {
+  if (!r.hold.length) return false;
+  const h = hopperOf(r), co = Math.cos(r.th), si = Math.sin(r.th), n = r.ejected = (r.ejected || 0) + 1;
+  const lz = ((n * 3) % 5 - 2) * 0.14, lx = r.half + r.type.reach + BALL_R + 0.03, i = feedBall(r, h.x[1], lz), v = 3.2;
+  putBall(i, r.x + lx * co - lz * si, r.y + BALL_R + 0.03, r.z + lx * si + lz * co, r.vx + co * v, 0, r.vz + si * v);
+  heldBy[i] = 0; r.stats.passes++;
+  return true;
 }
 function shotPlan(r) {
   if (inZone(r)) { const h = HUBS[r.alliance]; return { mode: 'hub', x: h.x, y: HUB_H + 0.15, z: h.z, d: Math.hypot(h.x - r.x, h.z - r.z) }; }
@@ -965,9 +1052,10 @@ function autoAlign(r) {
 }
 function fire(r, sloppyScale) {
   if (!r.hold.length || underTrench(r.x, r.z) || (r.type.fixed && !r.aligned)) return false;
-  const plan = shotPlan(r), i = r.hold.pop();
+  const plan = shotPlan(r);
   const lanes = r.type.lanes || 1, lane = (r.stats.shots * 3) % lanes - (lanes - 1) / 2;     // hop between lanes
   const at = r.type.turret ? r.type.turret.at : [r.type.muzzle || 0, 0, lane * (r.type.laneGap || 0)], co = Math.cos(r.th), si = Math.sin(r.th);
+  const i = feedBall(r, at[0], at[2]);
   const px = r.x + at[0] * co - at[2] * si, py = r.y + r.lift + (r.type.shotY || (r.type.tall ? 0.95 : 0.66)), pz = r.z + at[0] * si + at[2] * co;
   // Each lane fires straight ahead, so aim at the matching point across the target.
   const tx = plan.x - at[2] * si * 0.6, tz = plan.z + at[2] * co * 0.6;
@@ -1133,6 +1221,7 @@ function readHuman(r) {
     padPrev = { y: b(3), start: b(9) };
   }
   const c = r.cmd, v = r.type.speed, rel = !fieldRelative || camMode === 2;
+  if (r.type.shuttle) r.blockOn = down.has(keys.blocker) || !!pad?.buttons[1]?.pressed;      // held: eject
   if (rel) { const co = Math.cos(r.th), si = Math.sin(r.th); c.vx = (f * co - s * si) * v; c.vz = (f * si + s * co) * v; }
   else { const side = r.alliance === 'red' ? -1 : 1; c.vx = f * v * side; c.vz = s * v * side; }     // 'forward' is away from your own wall
   c.w = turn * r.type.turn; c.intake = intake; c.shoot = shoot; c.climb = climb;
@@ -1171,7 +1260,7 @@ function newGame(roster, mode) {
   game.bricked = false; game.brickAt = 0; game.second = 0; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
   const zs = [MZ - 1.55, MZ + 1.55, MZ];      // in line with the bumps, clear of the trench risers
-  const pick = () => ROBOTS[Math.floor(Math.random() * ROBOTS.length)];
+  const pick = () => aiRobot();
   if (roster) {                         // multiplayer: the host decided who drives what
     for (const e of roster) {
       const [x, z] = e.alliance === 'blue' ? [2.6, zs[e.slot]] : [L - 2.6, W - zs[e.slot]];
@@ -1215,7 +1304,7 @@ function tick() {
   const sk = SKILLS[game.skill];
   for (const r of game.robots) {
     if (r.human) readHuman(r); else if (r.remote) readRemote(r); else think(r, dt);
-    if (r.type.fixed) autoAlign(r);
+    if (r.type.fixed && !r.type.shuttle) autoAlign(r);
     r.pinning = false;
     runClimb(r, dt);
     moveRobot(r, dt);
@@ -1228,7 +1317,8 @@ function tick() {
     else r.pin = r.pin < 0 ? Math.min(0, r.pin + dt) : Math.max(0, r.pin - 2 * dt);
     runIntake(r);
     r.cool -= dt;
-    if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.player ? 1 : sk.rate));
+    if (r.type.shuttle) { if (ejecting(r) && r.cool <= 0 && !r.climb && eject(r)) r.cool = 1 / r.type.rate; }
+    else if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.player ? 1 : sk.rate));
     const y = r.y + r.lift + 0.21;
     r.body.setNextKinematicTranslation({ x: r.x, y, z: r.z });
     r.body.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
@@ -1249,6 +1339,7 @@ function tick() {
       }
     }
   }
+  stepHoppers(dt, true);
   world.step();
   // fuel that dropped into a hub: score it, then roll it back out toward mid-field
   for (let i = 0; i < FUEL; i++) {
@@ -1300,8 +1391,7 @@ function render() {
   held.fill(0);
   for (const r of game.robots) {         // fuel in a hopper rides along with its robot
     const co = Math.cos(r.th), si = Math.sin(r.th);
-    const back = (r.type.hopper?.stowBack || 0) * r.stow;
-    r.hold.forEach((i, k) => { let [lx, ly, lz] = r.slots[Math.min(k, r.slots.length - 1)]; lx -= back; held[i] = 1;
+    r.hold.forEach(i => { const lx = hp[i * 3], ly = hp[i * 3 + 1], lz = hp[i * 3 + 2]; held[i] = 1;
       heldAt[i * 3] = r.x + lx * co - lz * si; heldAt[i * 3 + 1] = r.y + r.lift + ly; heldAt[i * 3 + 2] = r.z + lx * si + lz * co; });
   }
   for (let i = 0; i < FUEL; i++) {
@@ -1352,10 +1442,11 @@ function drawHud() {
   if (game.mode === 'free') { $('clock').textContent = '∞'; $('phase').textContent = 'FREE PLAY'; }
   else { const left = Math.ceil(MATCH_T - game.t); $('clock').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; $('phase').textContent = PHASES[phaseIndex()][0]; }
   for (const [id, a] of [['hb', 'blue'], ['hr', 'red']]) { const on = hubActive(a); $(id).textContent = on ? 'HUB ACTIVE' : 'HUB OFF'; $(id).className = on ? 'hubon' : 'huboff'; }
-  $('fuelbar').style.width = `${100 * me.hold.length / me.type.cap}%`;
-  $('fueltxt').textContent = `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : '');
+  $('fuelbar').style.width = `${Math.min(100, 100 * me.hold.length / me.type.cap)}%`;
+  $('fueltxt').textContent = me.type.overflow ? `Fuel ${me.hold.length}` + (me.hold.length > me.type.cap ? ' — OVERFLOWING' : '')
+    : `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : '');
   const plan = shotPlan(me);
-  $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
+  $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : me.type.shuttle ? (me.hold.length ? `Hold ${keyName(keys.blocker)} to eject fuel` : 'Hopper empty') : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
     : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive(me.alliance) ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
   $('camtxt').textContent = `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
   let status = '';
@@ -1420,7 +1511,7 @@ function drawPicker() {
   const bar = (name, frac, text) => `<div class="stat"><span>${name}</span><div class="bar"><i style="width:${Math.round(clamp(frac, 0.04, 1) * 100)}%"></i></div><b>${text}</b></div>`;
   $('stats').innerHTML = bar('Speed', t.speed / 5, t.speed.toFixed(1)) + bar('Acceleration', t.accel / 15, t.accel) + bar('Hopper', t.cap / 55, t.cap) +
     bar('Fire rate', t.rate / 12, t.rate + '/s') + bar('Accuracy', (t.acc - 0.75) / 0.25, Math.round(t.acc * 100) + '%') + bar('Climb', t.climb / 3, 'L' + t.climb) +
-    bar('Weight', t.mass / 2, t.mass.toFixed(1)) + `<p class="note" style="margin:10px 0 0">${t.tall ? 'Too tall for the trenches — crosses over the bumps.' : 'Fits under the trenches.'}${t.blocker ? ' Intake stows and a shot blocker deploys.' : ''}${t.sotm ? ' Shoots on the move.' : ''}</p>`;
+    bar('Weight', t.mass / 2, t.mass.toFixed(1)) + `<p class="note" style="margin:10px 0 0">${t.tall ? 'Too tall for the trenches — crosses over the bumps.' : 'Fits under the trenches.'}${t.blocker ? ' Intake stows and a shot blocker deploys.' : ''}${t.sotm ? ' Shoots on the move.' : ''}${t.shuttle ? ' No shooter — ejects fuel out of the intake.' : ''}</p>`;
   drawMap();
 }
 function drawMap() {
