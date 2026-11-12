@@ -17,10 +17,10 @@ Then open http://localhost:5173. Opening `index.html` directly from disk does no
 | Key | Action |
 | --- | --- |
 | W A S D | Drive |
-| Arrow keys | Turn |
+| J / L, or arrow keys | Turn |
 | Left Shift | Intake |
 | Space | Shoot |
-| B | Stow intake and raise the shot blocker |
+| K | Stow intake and raise the shot blocker |
 | C | Climb |
 | V | Change camera |
 | F | Field-relative / robot-relative |
@@ -35,8 +35,13 @@ Keys can be rebound in Settings. A gamepad also works.
 - `index.html` — the whole game.
 - `field.glb` — the official field, converted from the FIRST field CAD.
 - `robot_calgames.glb`, `robot_calgames.json` — the Cal Games robot and its measured linkage (turret, four-bar intake, shot blocker).
-- `tools/build_field.py`, `tools/build_robot.py` — rebuild the models from STEP files. They need Python with `cascadio`, `trimesh` and `fast-simplification`.
+- `robot_reblitz.glb` — Re-Blitz, simplified from Team 2910's public CAD release, with stats from their 2026 tech binder.
+- `tools/build_field.py`, `tools/build_robot.py`, `tools/build_robot_static.py` — rebuild the models from STEP files. They need Python with `cascadio`, `trimesh` and `fast-simplification`.
 
 ## Notes
 
 Robot speeds, capacities and accuracy are estimates. Collisions use simple shapes, not the CAD mesh. Single player against AI only.
+
+## Credits
+
+Re-Blitz is the 2026 robot of FRC Team 2910, Jack in the Bot. The model and numbers come from the CAD and tech binder they published; this project is not affiliated with or endorsed by the team. The field model comes from the official FIRST field CAD.

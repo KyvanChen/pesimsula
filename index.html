@@ -231,24 +231,21 @@ const COL = { blue: 0x3d86ff, red: 0xff3d5a };
 
 // Original robots -- generic archetypes, not modelled on any real team.
 const ROBOTS = [
-  { id: 'vector', name: 'Vector', tag: 'Trench runner', color: 0x38d6c4, size: 0.70, speed: 5.0, accel: 13, turn: 7.5, cap: 18, rate: 9, acc: 0.90, tall: false, climb: 1, mass: 1.0,
-    bio: 'Low, light and quick. Slips under the trenches and wins the race to loose fuel, but empties its small hopper fast.' },
-  { id: 'atlas', name: 'Atlas', tag: 'Bulk hauler', color: 0xff9d2e, size: 0.82, speed: 4.0, accel: 9, turn: 5.5, cap: 55, rate: 7, acc: 0.86, tall: true, climb: 2, mass: 1.4,
-    bio: 'A towering hopper on wheels. Too tall for the trenches, so it grinds over the bumps and unloads fifty at a time.' },
-  { id: 'needle', name: 'Needle', tag: 'Turret sniper', color: 0xc77dff, size: 0.72, speed: 4.4, accel: 11, turn: 6.5, cap: 28, rate: 12, acc: 0.97, tall: false, climb: 1, mass: 1.0,
-    bio: 'A fast-feeding turret that rarely misses, even on the move. Average everywhere else.' },
-  { id: 'summit', name: 'Summit', tag: 'Climb specialist', color: 0x7ee05a, size: 0.74, speed: 4.2, accel: 11, turn: 6.0, cap: 24, rate: 6, acc: 0.86, tall: false, climb: 3, mass: 1.1,
-    bio: 'Built around its climber. A steady cycler that banks thirty tower points at the end of every match.' },
-  { id: 'ember', name: 'Ember', tag: 'All-rounder', color: 0xff5d8f, size: 0.76, speed: 4.6, accel: 12, turn: 6.5, cap: 32, rate: 8, acc: 0.92, tall: false, climb: 2, mass: 1.15,
-    bio: 'No weaknesses and no party tricks. A good first robot for learning the field.' },
-  { id: 'bastion', name: 'Bastion', tag: 'Heavy defender', color: 0x9fb4cc, size: 0.84, speed: 3.8, accel: 15, turn: 5.5, cap: 20, rate: 5, acc: 0.82, tall: true, climb: 1, mass: 2.0,
-    bio: 'Heavy, grippy and hard to move. Wins every shoving match; mind the pin timer.' },
   // Built from the team's own CAD (tools/build_robot.py). Stats are estimates, not measured.
   { id: 'calgames', name: 'Cal Games', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
     model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true,
     // Fuel sits low at the front, over the rollers and out into the intake; it shuffles back when the intake stows.
     hopper: { x: [0.0, 0.62], z: [-0.31, 0.31], y: 0.19, wall: 0.47, walls: [-0.02, 0.36], stowBack: 0.25 },
     bio: 'A turret that tracks the target and shoots on the move, over a wide roller intake. The intake stows on its four-bar, then the shot blocker swings level. No climber.' },
+  // Team 2910's Re-Blitz, from their public CAD and 2026 tech binder (tools/build_robot_static.py).
+  // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
+  { id: 'reblitz', name: 'Re-Blitz', tag: 'Team 2910', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
+    model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55,
+    muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156,        // four-wide shooter that throws out of the back, away from the intake
+    // Inside the polycarbonate hopper: four fuel wide, from the shooter tower out over the intake.
+    // The floor climbs over the intake, and the top layer stays clear of the hood.
+    hopper: { x: [-0.125, 0.645], z: [-0.311, 0.311], y: 0.14, slope: [0.3, 0.3], topFrom: 0.1 },
+    bio: 'A wide slap-down intake feeds a 50-fuel hopper and a four-wide shooter that empties it at 30 a second. Fits under the trench. No climber.' },
 ];
 const SKILLS = [
   { name: 'Rookie', speed: 0.45, acc: 0.6, rate: 0.35, replan: 0.6, fill: 0.9 },
@@ -259,14 +256,18 @@ const SKILLS = [
 // ============================================================
 // SETTINGS (saved in the browser)
 // ============================================================
-const DEFAULT_KEYS = { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', turnLeft: 'ArrowLeft', turnRight: 'ArrowRight',
-  intake: 'ShiftLeft', shoot: 'Space', climb: 'KeyC', blocker: 'KeyB', camera: 'KeyV', relative: 'KeyF', hideHud: 'KeyH', reset: 'KeyR' };
+const DEFAULT_KEYS = { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', turnLeft: 'KeyJ', turnRight: 'KeyL',
+  intake: 'ShiftLeft', shoot: 'Space', climb: 'KeyC', blocker: 'KeyK', camera: 'KeyV', relative: 'KeyF', hideHud: 'KeyH', reset: 'KeyR' };
 const KEY_LABELS = { forward: 'Drive forward', back: 'Drive back', left: 'Strafe left', right: 'Strafe right', turnLeft: 'Turn left', turnRight: 'Turn right',
   intake: 'Intake (hold)', shoot: 'Shoot / pass (hold)', climb: 'Climb (hold)', blocker: 'Stow intake + shot blocker', camera: 'Change camera', relative: 'Field / robot relative', hideHud: 'Hide HUD', reset: 'Reset field (free play)' };
 function load(key, fallback) { try { return Object.assign({}, fallback, JSON.parse(localStorage.getItem(key) || '{}')); } catch { return { ...fallback }; } }
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window */ } }
 const keys = load('ra.keys', DEFAULT_KEYS);
+// Move binds still on an older default over to the current one (arrows always turn as well).
+if (['ArrowLeft', 'KeyQ'].includes(keys.turnLeft) && ['ArrowRight', 'KeyE'].includes(keys.turnRight)) { keys.turnLeft = 'KeyJ'; keys.turnRight = 'KeyL'; }
+if (keys.blocker === 'KeyB') keys.blocker = 'KeyK';
 const opts = load('ra.opts', { quality: 1, fps: 0, mode: 'match', size: 1, skill: 1, robot: 0, sx: 2.6, sz: MZ - 2.3, brick: true });
+if (!ROBOTS[opts.robot]) opts.robot = 0;      // a saved pick from an older robot list
 const best = load('ra.best', {});
 
 // ============================================================
@@ -523,12 +524,23 @@ const MODELS = {};
 for (const t of ROBOTS) if (t.model) {
   try {
     MODELS[t.id] = (await new GLTFLoader().loadAsync(t.model)).scene;
-    t.rig = await (await fetch(t.model.replace('.glb', '.json'))).json();        // pivots and swing angles
-    t.turret = t.rig.turret;                                                     // where shots leave from, and what aims
+    if (!t.fixed) {                                                              // fixed models have no moving parts
+      t.rig = await (await fetch(t.model.replace('.glb', '.json'))).json();      // pivots and swing angles
+      t.turret = t.rig.turret;                                                   // where shots leave from, and what aims
+    }
   } catch { console.warn(t.model + ' not found - using a placeholder robot'); delete MODELS[t.id]; t.blocker = false; }
 }
 function buildModelRobot(type, alliance) {
   const g = new THREE.Group(), body = MODELS[type.id].clone(true), [fx, fz] = type.frame, rig = type.rig;
+  const bumpers = () => { for (const [w, d, x, z] of [[fx, 0.08, 0, fz / 2], [fx, 0.08, 0, -fz / 2], [0.08, fz + 0.08, fx / 2, 0], [0.08, fz + 0.08, -fx / 2, 0]])
+    box(w, 0.12, d, mat(COL[alliance]), x, 0.1, z, g); };
+  if (!rig) {                          // one rigid model: just bumpers and the intake light
+    body.traverse(o => { if (o.isMesh) { o.castShadow = !o.material.transparent; if (o.material.transparent) o.material.depthWrite = false; } });
+    g.add(body); bumpers();
+    const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, fz * 0.8, 8), mat(0x4cd07d, { emissive: 0x0d3a1e }));
+    roller.rotation.x = Math.PI / 2; roller.position.set(fx / 2 + type.reach + 0.02, 0.2, 0); g.add(roller); g.userData.roller = roller;
+    return g;
+  }
   const turret = new THREE.Group(), head = new THREE.Group(), blocker = new THREE.Group(), sorted = [];
   const swings = rig.swings.map(w => { const p = new THREE.Group(); p.position.set(w.pivot[0], w.pivot[1], 0); return p; });
   turret.position.set(...rig.turret.at);
@@ -543,8 +555,7 @@ function buildModelRobot(type, alliance) {
   }
   head.add(blocker); g.add(body, turret, head, ...swings);
   Object.assign(g.userData, { turret, head, blocker, swings });
-  for (const [w, d, x, z] of [[fx, 0.08, 0, fz / 2], [fx, 0.08, 0, -fz / 2], [0.08, fz + 0.08, fx / 2, 0], [0.08, fz + 0.08, -fx / 2, 0]])
-    box(w, 0.12, d, mat(COL[alliance]), x, 0.1, z, g);
+  bumpers();
   if (type.hopper) {                   // clear polycarbonate hopper sides
     const h = type.hopper, clear = new THREE.MeshStandardMaterial({ color: 0xdfeaf5, transparent: true, opacity: 0.2, roughness: 0.15, depthWrite: false });
     const [x0, x1] = h.walls, hy = h.wall - h.y;
@@ -584,10 +595,8 @@ function buildRobotMesh(type, alliance) {
   roller.rotation.x = Math.PI / 2; roller.position.set(s / 2 + 0.05, 0.1, 0); g.add(roller); g.userData.roller = roller;
   // shooter
   const shooter = new THREE.Group(); shooter.position.set(-0.05, h, 0); g.add(shooter);
-  if (type.id === 'needle') { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.1, 16), accent); shooter.add(t); }
   box(0.2, 0.16, 0.24, accent, 0.02, 0.1, 0, shooter).rotation.z = 0.5;
   if (type.climb > 1) for (const z of [-1, 1]) box(0.04, 0.3 + type.climb * 0.12, 0.04, mat(0xd7dfea, { metalness: 0.7, roughness: 0.3 }), -s / 2 + 0.12, h, z * (s / 2 - 0.12), g);
-  if (type.id === 'bastion') box(s + 0.06, 0.06, s + 0.06, mat(0x525f70), 0, 0.22, 0, g);
   return g;
 }
 
@@ -598,7 +607,12 @@ function hopperSlots(type) {
   for (let x = h.x[0] + BALL_R; x <= h.x[1] - BALL_R + 1e-6; x += step) for (let z = h.z[0] + BALL_R; z <= h.z[1] - BALL_R + 1e-6; z += step)
     if (!h.skip || !(x > h.skip[0] && x < h.skip[1] && z > h.skip[2] && z < h.skip[3])) layer.push([x, z]);
   const out = [];
-  for (let k = 0; k < type.cap; k++) { const [x, z] = layer[k % layer.length], n = Math.floor(k / layer.length); out.push([x + (n % 2) * 0.02, h.y + BALL_R + n * step * 0.86, z + (n % 2) * 0.02]); }
+  for (let n = 0; out.length < type.cap && n < 12; n++) for (const [x, z] of layer) {
+    if (out.length >= type.cap || (n >= 2 && h.topFrom !== undefined && x < h.topFrom)) continue;
+    const floor = h.y + (h.slope ? Math.max(0, x - h.slope[0]) * h.slope[1] : 0);
+    out.push([x + (n % 2) * 0.02, floor + BALL_R + n * step * 0.86, z + (n % 2) * 0.02]);
+  }
+  while (out.length < type.cap) out.push(out[out.length - 1]);
   return out;
 }
 function makeRobot(type, alliance, slot, human, x, z) {
@@ -706,17 +720,28 @@ function shotPlan(r) {
   const x = wallX(r.alliance, 2.2), z = clamp(r.z, 0.7, W - 0.7);
   return { mode: 'pass', x, y: 0.1, z, d: Math.hypot(x - r.x, z - r.z) };
 }
+function autoAlign(r) {
+  r.aligned = false;
+  if (!r.cmd.shoot || !r.hold.length || r.climb) return;
+  const plan = shotPlan(r), err = wrap(Math.atan2(plan.z - r.z, plan.x - r.x) - r.th - (r.type.rear ? Math.PI : 0));
+  r.cmd.w = clamp(err * 12, -r.type.turn, r.type.turn);
+  r.aligned = Math.abs(err) < 0.035 && Math.abs(r.w) < 1.5;
+}
 function fire(r, sloppyScale) {
-  if (!r.hold.length || underTrench(r.x, r.z)) return false;
+  if (!r.hold.length || underTrench(r.x, r.z) || (r.type.fixed && !r.aligned)) return false;
   const plan = shotPlan(r), i = r.hold.pop();
-  const at = r.type.turret ? r.type.turret.at : [0, 0, 0], co = Math.cos(r.th), si = Math.sin(r.th);
+  const lanes = r.type.lanes || 1, lane = (r.stats.shots * 3) % lanes - (lanes - 1) / 2;     // hop between lanes
+  const at = r.type.turret ? r.type.turret.at : [r.type.muzzle || 0, 0, lane * (r.type.laneGap || 0)], co = Math.cos(r.th), si = Math.sin(r.th);
   const px = r.x + at[0] * co - at[2] * si, py = r.y + r.lift + (r.type.shotY || (r.type.tall ? 0.95 : 0.66)), pz = r.z + at[0] * si + at[2] * co;
-  const dx = plan.x - px, dz = plan.z - pz, d = Math.max(0.05, Math.hypot(dx, dz)), dh = plan.y - py;
+  // Each lane fires straight ahead, so aim at the matching point across the target.
+  const tx = plan.x - at[2] * si * 0.6, tz = plan.z + at[2] * co * 0.6;
+  const dx = tx - px, dz = tz - pz, d = Math.max(0.05, Math.hypot(dx, dz)), dh = plan.y - py;
   let th = (plan.mode === 'pass' ? 45 : d < 1.6 ? 78 : d < 3 ? 68 : 60) * Math.PI / 180;
   while (d * Math.tan(th) <= dh + 0.15 && th < 1.5) th += 0.06;
   const sloppy = (1 - r.type.acc) * sloppyScale;
   const v = Math.sqrt(G * d * d / (2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dh))) * (1 + gauss() * sloppy * 0.3);
-  const yaw = Math.atan2(dz, dx) + gauss() * sloppy * 0.45, vh = v * Math.cos(th);
+  // A fixed shooter can only throw straight ahead: the robot has to be lined up first.
+  const yaw = (r.type.fixed ? r.th + (r.type.rear ? Math.PI : 0) : Math.atan2(dz, dx)) + gauss() * sloppy * 0.45, vh = v * Math.cos(th);
   // A good shooter cancels its own motion; a sloppy one lets the shot drift
   const drift = r.type.sotm ? 0 : sloppy * 3;        // shoot-on-the-move turrets cancel the robot's motion
   putBall(i, px, py, pz, Math.cos(yaw) * vh + r.vx * drift, v * Math.sin(th), Math.sin(yaw) * vh + r.vz * drift);
@@ -856,7 +881,8 @@ function rumble(strength, ms) {
 }
 function readHuman(r) {
   if (game.bricked) { Object.assign(r.cmd, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); return; }
-  const k = a => down.has(keys[a]) || (a === 'intake' && down.has('ShiftRight'));
+  const ALT = { intake: 'ShiftRight', turnLeft: 'ArrowLeft', turnRight: 'ArrowRight' };       // always-on second keys
+  const k = a => down.has(keys[a]) || down.has(ALT[a]);
   let f = (k('forward') ? 1 : 0) - (k('back') ? 1 : 0), s = (k('right') ? 1 : 0) - (k('left') ? 1 : 0), turn = (k('turnRight') ? 1 : 0) - (k('turnLeft') ? 1 : 0);
   let intake = k('intake'), shoot = k('shoot'), climb = k('climb');
   const mag = Math.hypot(f, s); if (mag > 1) { f /= mag; s /= mag; }
@@ -909,8 +935,7 @@ function newGame() {
   game.bricked = false; game.brickAt = 0; game.second = 0; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
   const zs = [MZ - 2.3, MZ + 2.3, MZ];
-  const others = ROBOTS.filter((_, i) => i !== opts.robot);
-  const pick = () => others[Math.floor(Math.random() * others.length)];
+  const pick = () => ROBOTS[Math.floor(Math.random() * ROBOTS.length)];
   game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, opts.sx, opts.sz);
   game.robots.push(game.me);
   for (let s = 0; s < opts.size; s++) {
@@ -945,6 +970,7 @@ function tick() {
   const sk = SKILLS[game.skill];
   for (const r of game.robots) {
     if (r.human) readHuman(r); else think(r, dt);
+    if (r.type.fixed) autoAlign(r);
     r.pinning = false;
     runClimb(r, dt);
     moveRobot(r, dt);
