@@ -358,12 +358,134 @@ async function openPeer(id) {
     peer.on('error', e => { fail(e); if (net.peer === peer && state === 'lobby') status(e.type === 'peer-unavailable' ? 'No room with that code.' : 'Connection problem: ' + e.type); });
   });
 }
+// ---------- relay ----------
+// Direct connections often fail between two computers on the same Wi-Fi, or on school networks. When
+// one cannot be made the joiner falls back to a relay: both sides talk to a public message broker
+// over an ordinary secure web socket, which gets through anywhere a web page loads. It adds delay,
+// so the direct link is always tried first. Snapshots go out at half rate and mostly as changes.
+const RELAYS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081'];
+const relayTopic = room => 'pesimsula/v1/' + room;
+const HEAD = n => 18 + n * ROBOT_BYTES;      // snapshot bytes before the fuel
+async function relayOpen(url) {
+  const mod = await import('https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.esm.js'), mqtt = mod.default?.connect ? mod.default : mod;
+  return new Promise((ok, fail) => {
+    const m = mqtt.connect(url, { connectTimeout: 6000, reconnectPeriod: 2000, keepalive: 20 });
+    const give = setTimeout(() => { m.end(true); fail(new Error('timeout')); }, 7000);
+    m.once('connect', () => { clearTimeout(give); ok(m); });
+    m.once('error', e => { clearTimeout(give); m.end(true); fail(e); });
+  });
+}
+const text = bytes => new TextDecoder().decode(bytes);
+// Host side: listen for joiners on the first relay that answers.
+async function relayHost(peer) {
+  for (const url of RELAYS) {
+    let m; try { m = await relayOpen(url); } catch { continue; }
+    if (net.peer !== peer || net.role !== 'host') { m.end(true); return; }           // the room was closed meanwhile
+    const T = relayTopic(net.room), byId = new Map();
+    net.relay = m; net.relayUrl = url;
+    m.subscribe(T + '/up/+');
+    m.on('message', (topic, payload) => {
+      const cid = topic.slice(topic.lastIndexOf('/') + 1), msg = rx(text(payload)); if (!msg) return;
+      let conn = byId.get(cid);
+      if (!conn) {
+        if (msg.t !== 'hello') return;
+        conn = { relay: true, open: true, cid, send: data => { if (typeof data === 'string') m.publish(`${T}/down/${cid}`, data); }, close() { this.open = false; } };
+        byId.set(cid, conn);
+      }
+      conn.seen = performance.now();
+      if (msg.t === 'bye') { byId.delete(cid); conn.open = false; hostDrop(conn); return; }
+      if (msg.t === 'hello' && net.conns.includes(conn)) { hostLobby(); return; }       // a repeated knock: answer again
+      hostMessage(conn, msg);
+    });
+    net.relayTimer = setInterval(() => {
+      const now = performance.now();
+      m.publish(T + '/snap', new Uint8Array([2]));                                       // heartbeat: the room is alive
+      for (const c of [...net.conns]) if (c.relay && now - c.seen > 10000) { byId.delete(c.cid); c.open = false; hostDrop(c); }
+    }, 2000);
+    return;
+  }
+}
+// A full picture goes out once a second; in between, only the fuel that differs from that picture.
+// Every packet stands on its own against the last full one, so a lost packet costs a tenth of a second.
+function relaySnapshot(buf) {
+  const all = new Uint8Array(buf), n = all[17], head = HEAD(n), fuel = all.subarray(head);
+  const count = net.rcount = (net.rcount || 0) + 1, full = !net.rkey || count % 10 === 0;
+  let out;
+  if (full) { out = new Uint8Array(3 + all.length); out.set(all, 3); net.rkey = fuel.slice(); net.rseq = ((net.rseq ?? -1) + 1) & 0xffff; }
+  else {
+    const key = net.rkey, moved = [];
+    for (let i = 0; i < FUEL; i++) { const k = i * 6; for (let j = 0; j < 6; j++) if (fuel[k + j] !== key[k + j]) { moved.push(i); break; } }
+    out = new Uint8Array(3 + head + 2 + moved.length * 8); out.set(all.subarray(0, head), 3);
+    const dv = new DataView(out.buffer); let o = 3 + head; dv.setUint16(o, moved.length, true); o += 2;
+    for (const i of moved) { dv.setUint16(o, i, true); out.set(fuel.subarray(i * 6, i * 6 + 6), o + 2); o += 8; }
+  }
+  out[0] = full ? 0 : 1; out[1] = net.rseq & 255; out[2] = net.rseq >> 8;          // which full picture this belongs to
+  net.relay.publish(relayTopic(net.room) + '/snap', out);
+}
+function relaySnapIn(bytes) {          // joiner side: rebuild a whole snapshot from a relay packet
+  if (bytes.length < 21 || bytes[0] > 1) return;
+  const seq = bytes[1] | bytes[2] << 8, n = bytes[3 + 17], head = HEAD(n), whole = new Uint8Array(head + FUEL * 6);
+  if (bytes[0] === 0) { if (bytes.length !== 3 + head + FUEL * 6) return; net.rkey = new Uint8Array(bytes.subarray(3 + head)); net.rseq = seq; whole.set(net.rkey, head); }
+  else {
+    if (!net.rkey || seq !== net.rseq || bytes.length < 3 + head + 2) return;          // belongs to a picture we never got
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), count = dv.getUint16(3 + head, true);
+    if (bytes.length !== 3 + head + 2 + count * 8) return;
+    whole.set(net.rkey, head);
+    for (let c = 0, o = 3 + head + 2; c < count; c++, o += 8) { const i = dv.getUint16(o, true); if (i < FUEL) whole.set(bytes.subarray(o + 2, o + 8), head + i * 6); }
+  }
+  whole.set(bytes.subarray(3, 3 + head));
+  if (state === 'play') readSnapshot(whole.buffer);
+}
+// Joiner side: knock on each relay in turn until the host answers.
+async function relayJoin(peer, room) {
+  if (net.relayTry) return; net.relayTry = true;
+  const old = net.host; net.host = null; try { old?.close(); } catch { /* never opened */ }
+  const mine = () => net.peer === peer && net.role === 'client';
+  for (const url of RELAYS) {
+    if (!mine()) return;
+    status('No direct connection — trying a relay…');
+    let m; try { m = await relayOpen(url); } catch { continue; }
+    if (!mine()) { m.end(true); return; }
+    const T = relayTopic(room), cid = Math.random().toString(36).slice(2, 10);
+    const conn = { relay: true, open: false, seen: performance.now(), send: data => { if (typeof data === 'string') m.publish(`${T}/up/${cid}`, data); },
+      close() { try { m.publish(`${T}/up/${cid}`, JSON.stringify({ t: 'bye' })); } catch { /* gone */ } clearInterval(conn.timer); m.end(); } };
+    net.host = conn; net.rkey = null;
+    m.subscribe([`${T}/down/${cid}`, `${T}/snap`]);
+    m.on('message', (topic, payload) => {
+      if (net.host !== conn) return;
+      conn.seen = performance.now();
+      if (topic.endsWith('/snap')) { relaySnapIn(payload); return; }
+      conn.open = true; clientMessage(text(payload));
+    });
+    const hello = () => tx(conn, { t: 'hello', name: myName(), type: ROBOTS[opts.robot].id });
+    for (let i = 0; i < 4 && !conn.open && mine(); i++) { hello(); await new Promise(r => setTimeout(r, 1000)); }
+    if (!mine() || net.host !== conn) { conn.close(); return; }
+    if (!conn.open) { conn.close(); net.host = null; continue; }
+    net.relayUrl = url; status('Connected through a relay (a little slower). Waiting for the host to start.');
+    conn.timer = setInterval(() => {                                                      // keep knocking so the host knows we are here
+      if (net.host !== conn) { clearInterval(conn.timer); return; }
+      tx(conn, { t: 'ping' });
+      if (performance.now() - conn.seen > 9000) { clearInterval(conn.timer); hostLost(conn); }
+    }, 2000);
+    return;
+  }
+  if (mine()) { net.relayTry = false; status('Could not reach the room, directly or through a relay. Check the code, and that the host still has the room open.'); }
+}
+function hostLost(conn) {              // the link to the host is gone: back to the lobby
+  if (net.host !== conn) return;
+  const was = state; leaveRoom(); state = 'lobby'; paused = false; show('lobby'); drawLobby();
+  status(was === 'lobby' ? 'Disconnected from the room.' : 'The host closed the room.');
+}
 const tx = (c, msg) => { try { c.send(msg instanceof ArrayBuffer ? msg : JSON.stringify(msg)); } catch { /* channel closing */ } };
 const rx = msg => { if (typeof msg !== 'string') return msg; try { return JSON.parse(msg); } catch { return null; } };
 function broadcast(msg) { for (const c of net.conns) if (c.open) tx(c, msg); }
 function leaveRoom() {
   if (!net.role) return;
-  const peer = net.peer; net.role = null; net.peer = null; net.conns = []; net.host = null; net.players = []; net.prev = net.next = null;
+  const peer = net.peer, host = net.host, relay = net.relay; clearInterval(net.relayTimer);
+  net.role = null; net.peer = null; net.conns = []; net.host = null; net.players = []; net.prev = net.next = null;
+  net.relay = null; net.relayTry = false; net.rkey = null; net.rseq = undefined;
+  try { if (host?.relay) host.close(); } catch { /* already gone */ }
+  try { relay?.end(true); } catch { /* already gone */ }
   try { peer?.destroy(); } catch { /* already gone */ }
   $('lobbyJoin').style.display = ''; $('lobbyRoom').style.display = 'none'; $('btnLobbyStart').style.display = 'none'; status('');
 }
@@ -394,6 +516,7 @@ async function hostRoom() {
     conn.on('error', () => hostDrop(conn));
   });
   status('Share the room code. Press Start when everyone is in.'); drawLobby();
+  relayHost(net.peer);                 // for joiners who cannot connect directly
 }
 const sideCount = a => net.players.filter(p => p.alliance === a).length;
 function hostLobby() { for (const c of net.conns) if (c.open) tx(c, { t: 'lobby', players: net.players, you: c.pid, room: net.room }); if (state === 'lobby') drawLobby(); }
@@ -433,7 +556,7 @@ function hostStart() {
       roster.push(p ? { type: p.type, alliance: a, slot, pid: p.pid, name: p.name } : { type: aiRobot(roster.filter(e => e.alliance === a).map(e => ROBOTS.find(t => t.id === e.type) || ROBOTS[0])).id, alliance: a, slot, pid: null });
     }
   }
-  net.ticks = 0;
+  net.ticks = 0; net.rkey = null;
   broadcast({ t: 'start', roster, mode: opts.mode });
   newGame(roster); state = 'play'; paused = false; show(null); toast(game.mode === 'free' ? 'FREE PLAY' : 'AUTO — GO');
 }
@@ -469,22 +592,32 @@ function sendSnapshot() {
     if (b.on) { const t = b.body.translation(); dv.setInt16(o, clamp(t.x, -30, 30) * 1000, true); dv.setInt16(o + 2, clamp(t.y, -30, 30) * 1000, true); dv.setInt16(o + 4, clamp(t.z, -30, 30) * 1000, true); }
     else { dv.setInt16(o, owner[i], true); dv.setInt16(o + 2, -32768, true); dv.setInt16(o + 4, slot[i], true); }
   }
-  for (const c of net.conns) if (c.open) tx(c, dv.buffer);
+  for (const c of net.conns) if (c.open && !c.relay) tx(c, dv.buffer);
+  if (net.relay && net.conns.some(c => c.relay && c.open) && (net.snapN = (net.snapN || 0) + 1) % 2 === 0) relaySnapshot(dv.buffer);
 }
 // ---------- client ----------
 async function joinRoom() {
   const room = $('mpCode').value.trim().toUpperCase(); if (room.length < 4) { status('Type the room code first.'); return; }
-  let peer; try { peer = await openPeer(); } catch { status('Could not connect. Check your connection and try again.'); return; }
-  Object.assign(net, { role: 'client', peer, room, players: [], prev: null, next: null });
+  let peer = null, missing = false;
+  try { peer = await openPeer(); } catch { /* no direct service: the relay may still work */ }
+  peer = peer || {};
+  Object.assign(net, { role: 'client', peer, room, players: [], prev: null, next: null, relayTry: false });
+  drawLobby();
+  if (!peer.connect || window.__forceRelay) { relayJoin(peer, room); return; }      // __forceRelay: test hook
+  peer.on('error', e => { if (e.type === 'peer-unavailable') missing = true; });      // nobody is hosting that code directly
   const conn = net.host = peer.connect(ROOM_PREFIX + room, { reliable: true, serialization: 'raw' });
   status('Looking for room ' + room + '…');
-  const giveUp = setTimeout(() => { if (net.host === conn && !conn.open) status('Found the room but could not connect to the host. This network may block direct connections — try the same Wi-Fi, or a phone hotspot.'); }, 12000);
-  conn.on('open', () => { clearTimeout(giveUp); status('Connected. Joining…'); tx(conn, { t: 'hello', name: myName(), type: ROBOTS[opts.robot].id }); });
-  conn.on('data', clientMessage);
-  conn.on('error', e => status('Connection error: ' + (e.type || e.message || e)));
-  conn.on('iceStateChanged', st => { if (net.host === conn && (st === 'failed' || st === 'disconnected') && state === 'lobby') status('Connection ' + st + '. This network may block direct connections.'); });
-  conn.on('close', () => { clearTimeout(giveUp); if (net.host !== conn) return; const was = state; leaveRoom(); state = 'lobby'; paused = false; show('lobby'); drawLobby(); status(was === 'lobby' ? 'Disconnected from the room.' : 'The host closed the room.'); });
-  drawLobby();
+  const fallback = () => { if (net.peer === peer && net.host === conn && !conn.open && !missing) relayJoin(peer, room); };
+  const giveUp = setTimeout(fallback, 5000);
+  conn.on('open', () => {
+    clearTimeout(giveUp);
+    if (net.host !== conn) { try { conn.close(); } catch { /* gone */ } return; }      // the relay got there first
+    status('Connected. Joining…'); tx(conn, { t: 'hello', name: myName(), type: ROBOTS[opts.robot].id });
+  });
+  conn.on('data', msg => { if (net.host === conn) clientMessage(msg); });
+  conn.on('error', fallback);
+  conn.on('iceStateChanged', st => { if (st === 'failed') fallback(); });
+  conn.on('close', () => { clearTimeout(giveUp); hostLost(conn); });
 }
 function clientMessage(msg) {
   msg = rx(msg); if (!msg) return;
@@ -542,7 +675,7 @@ function clientFrame(now) {
   const nx = net.next, pv = net.prev;
   if (nx) applySnapshot(pv ? clamp((now - nx.at) / Math.max(30, nx.at - pv.at), 0, 1) : 1);
   if (nx) { stepHoppers(clamp((now - (net.pileAt || now)) / 1000, 0.004, 0.034), false); net.pileAt = now; }
-  const me = game.me; if (!me || !net.host?.open || now - net.sent < 15) return;
+  const me = game.me; if (!me || !net.host?.open || now - net.sent < (net.host.relay ? 32 : 15)) return;
   net.sent = now;
   if (paused) Object.assign(me.cmd, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); else readHuman(me);
   const c = me.cmd;
