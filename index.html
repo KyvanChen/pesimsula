@@ -102,7 +102,7 @@
 </head>
 <body>
 <canvas id="view"></canvas>
-<div id="brick"><b>BRICKED</b><small>your robot died on the field</small></div>
+<div id="brick"><b>BRICKED</b><small>your robot died — watch from the driver station</small></div>
 <div id="loading">Loading physics and graphics…</div>
 
 <div id="hud">
@@ -249,7 +249,7 @@ const PHASES = [['AUTO', 20], ['TRANSITION', 10], ['SHIFT 1', 25], ['SHIFT 2', 2
 const MATCH_T = PHASES.reduce((a, p) => a + p[1], 0);
 const CLIMB_PTS = [0, 10, 20, 30], CLIMB_TIMES = [1.2, 3.0, 5.0], CLIMB_Y = [0, 0.35, 0.8, 1.25];
 const FOUL_PTS = 5, PIN_LIMIT = 3.0;
-const BRICK_CHANCE = 0.0001, BRICK_SLOWMO = 0.22, BRICK_SECONDS = 3.5;   // per-second odds your robot dies, then the slow-mo ending
+const BRICK_CHANCE = 0.0001, BRICK_SECONDS = 3.5;   // per-second odds your robot dies, and how long the banner stays up
 const RP = { energized: 100, supercharged: 360, traversal: 50 };
 const COL = { blue: 0x3d86ff, red: 0xff3d5a };
 
@@ -257,7 +257,7 @@ const COL = { blue: 0x3d86ff, red: 0xff3d5a };
 const ROBOTS = [
   // Built from the team's own CAD (tools/build_robot.py). Stats are estimates, not measured.
   { id: 'calgames', name: 'Elite Ball Knowledge', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
-    model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true, overflow: true,
+    model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true, overflow: true, intake: 20,
     // Fuel sits low at the front, over the rollers and out into the intake; it shuffles back when the intake stows.
     // There is no hard limit: past about 30 the pile is higher than the walls (wall) and fuel rolls off.
     hopper: { x: [0.0, 0.62], z: [-0.31, 0.31], y: 0.19, wall: 0.47, walls: [-0.02, 0.36], stowBack: 0.25 },
@@ -266,7 +266,7 @@ const ROBOTS = [
   // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
   { id: 'reblitz', name: 'Re-Blitz', tag: 'Team 2910', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
     model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55,
-    muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156,        // four-wide shooter that throws out of the back, away from the intake
+    muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156, intake: 24,        // four-wide shooter that throws out of the back, away from the intake
     // Inside the polycarbonate hopper: four fuel wide, from the shooter tower out over the intake.
     // The floor climbs over the intake, so fuel rolls back toward the shooter.
     hopper: { x: [-0.125, 0.645], z: [-0.311, 0.311], y: 0.14, slope: [0.3, 0.3] },
@@ -274,11 +274,17 @@ const ROBOTS = [
   // A fuel shuttle, from its CAD (tools/build_robot_static.py). No shooter: it fills a tall open bin and
   // pushes the fuel back out through the intake. Frame and bin sizes are measured; the rest are estimates.
   { id: 'shuttler', name: 'Peninsula Pups', tag: 'Fuel shuttle', color: 0xff7a1a, size: 0.88, speed: 4.4, accel: 11, turn: 6, cap: 80, rate: 18, acc: 0.9, tall: true, climb: 0, mass: 1.5,
-    model: 'robot_shuttler.glb', fixed: true, shuttle: true, overflow: true, frame: [0.675, 0.72], reach: 0.22,
+    model: 'robot_shuttler.glb', fixed: true, shuttle: true, overflow: true, brick: 0.005,      // brick: its own odds of dying, per second
+    frame: [0.675, 0.72], reach: 0.22,
     hopper: { x: [-0.33, 0.635], z: [-0.35, 0.35], y: 0.215, wall: 0.749 },
     bio: 'A slap-down intake under a tall open bin that reaches out over the intake. No shooter: it carries fuel and ejects it out of the front. Too tall for the trenches.' },
 ];
-const aiRobot = () => { const list = ROBOTS.filter(t => !t.shuttle); return list[Math.floor(Math.random() * list.length)]; };   // the AI cannot play a robot with no shooter
+// An AI robot for an alliance that already has these robots. A shuttle only helps next to a shooter, so at most one, and never alone.
+const aiRobot = mates => {
+  const shooters = ROBOTS.filter(t => !t.shuttle), shuttle = ROBOTS.find(t => t.shuttle);
+  if (shuttle && mates.some(t => !t.shuttle) && !mates.some(t => t.shuttle) && Math.random() < 0.3) return shuttle;
+  return shooters[Math.floor(Math.random() * shooters.length)];
+};
 const SKILLS = [
   { name: 'Rookie', speed: 0.45, acc: 0.6, rate: 0.35, replan: 0.6, fill: 0.9 },
   { name: 'Regional', speed: 0.65, acc: 0.85, rate: 0.55, replan: 0.4, fill: 0.7 },
@@ -424,7 +430,7 @@ function hostStart() {
     const drivers = net.players.filter(p => p.alliance === a).slice(0, 3), size = Math.max(opts.size, drivers.length);
     for (let slot = 0; slot < size; slot++) {
       const p = drivers[slot];
-      roster.push(p ? { type: p.type, alliance: a, slot, pid: p.pid, name: p.name } : { type: aiRobot().id, alliance: a, slot, pid: null });
+      roster.push(p ? { type: p.type, alliance: a, slot, pid: p.pid, name: p.name } : { type: aiRobot(roster.filter(e => e.alliance === a).map(e => ROBOTS.find(t => t.id === e.type) || ROBOTS[0])).id, alliance: a, slot, pid: null });
     }
   }
   net.ticks = 0;
@@ -635,8 +641,9 @@ function buildField() {
       fixedBox(w / 2, HUB_H / 2, d / 2, hx + dx, HUB_H / 2, hz + dz, 0.35);
     }
     box(HUB + 0.04, 0.1, HUB + 0.04, mat(tint), hx, 0.4, hz);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(HUB * 0.5, 0.045, 8, 6), new THREE.MeshStandardMaterial({ color: 0x4cd07d, emissive: 0x4cd07d, emissiveIntensity: 1.2 }));
-    ring.rotation.x = Math.PI / 2; ring.rotation.z = Math.PI / 6; ring.position.set(hx, HUB_H + 0.03, hz); scene.add(ring);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.613, 0.03, 8, 6), new THREE.MeshStandardMaterial({ color: 0x4cd07d, emissive: 0x4cd07d, emissiveIntensity: 1.2 }));
+    // Sits on the funnel rim of the field model: same size, corners pointing along the field.
+    ring.rotation.x = Math.PI / 2; ring.position.set(hx, HUB_H + 0.02, hz); scene.add(ring);
     hubLights[a] = ring.material;
 
     for (const s of [-1, 1]) {
@@ -852,7 +859,7 @@ function buildRobotMesh(type, alliance) {
 // fuel against fuel, and the hopper floor and walls. Positions are kept per fuel, so the host and
 // every client each run their own copy; only who holds what goes over the network.
 const hp = new Float32Array(FUEL * 3), hv = new Float32Array(FUEL * 3), feeding = new Float32Array(FUEL), heldBy = new Uint8Array(FUEL), stillHeld = new Uint8Array(FUEL);
-const INTAKE_RATE = 12;                   // fuel a second through the intake
+const INTAKE_RATE = 12;                   // fuel a second through the intake, unless the robot sets its own (intake)
 const FEED_T = 0.2, FEED_V = 1.0;        // how long and how fast the rollers push each fuel in
 const PRELOADED = 1e6;                 // marks fuel that starts in the hopper and did not come in through the intake
 function hopperOf(r) { const s = r.type.size; return r.type.hopper || { x: [-s * 0.3, s * 0.22], z: [-s * 0.27, s * 0.27], y: 0.26 }; }
@@ -1017,7 +1024,7 @@ function runIntake(r) {
   if (!r.cmd.intake || free <= 0 || r.climb || r.stow > 0.1 || ejecting(r)) return;
   const c = Math.cos(r.th), s = Math.sin(r.th), front = r.half + (r.type.reach || 0.16), back = r.half - 0.08, halfW = r.half * 0.85;
   // The rollers pass fuel at a steady rate; anything more waits in front of the intake.
-  r.fed = Math.min(1.5, (r.fed || 0) + INTAKE_RATE * STEP);
+  r.fed = Math.min(1.5, (r.fed || 0) + (r.type.intake || INTAKE_RATE) * STEP);
   let taken = 0; const room = Math.min(free, Math.floor(r.fed));
   for (let i = 0; i < FUEL && taken < room; i++) {
     if (!balls[i].on || pos[i * 3 + 1] > 0.34) continue;
@@ -1120,6 +1127,7 @@ function pickBall(r) {
     if ((x < TOWER_D + 0.2 || x > L - TOWER_D - 0.2) && Math.abs(z - MZ) < 1.15) continue;
     if (avoid && Math.abs(x - avoid[0]) < 1 && Math.abs(z - avoid[1]) < 1) continue;
     let cost = Math.abs(x - r.x) + Math.abs(z - r.z);
+    if (r.type.shuttle && (x < HUBX + BAND || x > L - HUBX - BAND)) continue;     // a shuttle only works the neutral zone
     if ((r.x - HUBX) * (x - HUBX) < 0) cost += 3;
     if ((r.x - (L - HUBX)) * (x - (L - HUBX)) < 0) cost += 3;
     if (cost >= bestCost) continue;
@@ -1128,36 +1136,59 @@ function pickBall(r) {
   }
   return bestAt;
 }
+// Where each robot likes to unload from, once it is carrying enough.
+function scoreSpot(r) {
+  const t = r.type;
+  if (t.shuttle) return [wallX(r.alliance, LINE - 2.4), BUMP_LANES.reduce((b, v) => Math.abs(v - r.z) < Math.abs(b - r.z) ? v : b)];   // over the bump it came in by, clear of the lane
+  if (t.fixed) return [wallX(r.alliance, LINE - 1.5), clamp(r.z, MZ - 1.6, MZ + 1.6)];        // a dumper parks square in front of the hub
+  if (t.sotm) return [wallX(r.alliance, LINE - 1.0), clamp(r.z, 1.3, W - 1.3)];              // a turret only has to get inside the zone
+  return [wallX(r.alliance, 2.5), clamp(r.z, 1.3, W - 1.3)];
+}
 function think(r, dt) {
   const a = r.ai, sk = SKILLS[game.skill], c = r.cmd, vmax = r.type.speed * sk.speed;
   const hubOn = hubActive(r.alliance), home = inZone(r), left = game.mode === 'free' ? 999 : MATCH_T - game.t;
-  c.intake = true; c.shoot = false; c.climb = false;
+  const t = r.type, slow = Math.hypot(r.vx, r.vz) < 0.5;
+  // A shuttle keeps its intake off at home so it does not eat what it just delivered; an open hopper stops when it is full.
+  c.intake = t.shuttle ? !home : !t.overflow || r.hold.length < t.cap + 3; c.shoot = false; c.climb = false;
   let goal, arrive = true, collecting = false;
   if (r.type.climb && left < a.climbAt) {
     goal = [wallX(r.alliance, TOWER_D + 0.55), towerZ(r.alliance) + [-0.95, 0.95, 0][r.slot]];
     c.shoot = home && r.hold.length > 0;
     if (Math.hypot(goal[0] - r.x, goal[1] - r.z) < 0.45) { c.vx = c.vz = c.w = 0; c.climb = true; c.intake = false; return; }
   } else {
-    const need = hubOn ? Math.max(1, Math.floor(r.type.cap * sk.fill)) : r.type.cap;
+    // A shuttle hauls big loads whatever the hub is doing; a dumper wants a deep hopper before it parks to unload.
+    const fill = t.shuttle ? 0.6 : t.fixed ? Math.max(sk.fill, 0.75) : sk.fill;
+    const need = hubOn || t.shuttle ? Math.max(1, Math.floor(t.cap * fill)) : t.cap;
     if (a.mode === 'collect' && (r.hold.length >= need || (r.hold.length > 0 && left < 10))) {
-      a.mode = 'score'; a.goal = [wallX(r.alliance, 2.5), clamp(r.z, 1.3, W - 1.3)];
+      a.mode = 'score'; a.goal = scoreSpot(r);
     } else if (a.mode === 'score' && !r.hold.length) { a.mode = 'collect'; a.replan = 0; }
     if (a.mode === 'score') {
-      goal = a.goal || [wallX(r.alliance, 2.5), r.z];
-      c.shoot = home ? hubOn : !hubOn;          // away with a dead hub: pass the load home
+      goal = a.goal || scoreSpot(r);
+      const near = Math.hypot(goal[0] - r.x, goal[1] - r.z) < 0.6;
+      if (t.shuttle) c.shoot = home && near;                 // roll the load out once it is over the bump
+      else if (t.fixed) {                                     // a dumper shoots straight: stop first, then let it line up
+        if (home) c.shoot = hubOn && near && slow;
+        else if (!hubOn && !underTrench(r.x, r.z) && Math.abs(Math.abs(r.x - L / 2) - (L / 2 - HUBX)) > BAND + 0.3) { goal = [r.x, r.z]; c.shoot = slow; }   // dead hub: park and pass it home
+      }
+      else c.shoot = home ? hubOn : !hubOn;                   // away with a dead hub: pass the load home
     } else {
       a.chase = r.hold.length !== a.last ? 0 : a.chase + dt; a.last = r.hold.length;
       if (a.chase > 5 && a.target) { a.avoid = [a.target[0], a.target[1], game.t + 10]; a.chase = 0; a.target = null; }
       a.replan -= dt;
       if (a.replan <= 0 || !a.target) { a.target = pickBall(r); a.replan = sk.replan; }
-      if (a.target) { goal = a.target; arrive = false; collecting = true; } else goal = [wallX(r.alliance, 2.5), r.z];
+      if (a.target) { goal = a.target; arrive = false; collecting = true; } else goal = t.shuttle ? [L / 2, r.z] : [wallX(r.alliance, 2.5), r.z];
+      if (t.sotm && home && hubOn && r.hold.length) c.shoot = true;       // a turret scores while it keeps collecting
     }
   }
   const [wx, wz] = route(r, goal[0], goal[1]), final = wx === goal[0] && wz === goal[1];
   const dx = wx - r.x, dz = wz - r.z, d = Math.hypot(dx, dz);
   let speed = vmax; if (arrive && final) speed *= Math.min(1, d / 0.7);
   let want = r.th;
-  if (a.mode === 'score' && home && final && d < 1) { const h = HUBS[r.alliance]; want = Math.atan2(h.z - r.z, h.x - r.x); }
+  if (a.mode === 'score' && home && final && d < 1) {
+    const h = HUBS[r.alliance];
+    if (t.shuttle) want = r.alliance === 'blue' ? Math.PI : 0;                 // unload towards its own wall, deeper into the zone
+    else if (!t.sotm) want = Math.atan2(h.z - r.z, h.x - r.x) + (t.rear ? Math.PI : 0);
+  }
   else if (d > 0.3) want = Math.atan2(dz, dx);
   const err = wrap(want - r.th);
   c.w = clamp(5 * err, -r.type.turn, r.type.turn);
@@ -1197,7 +1228,7 @@ function press(action) {
     else { game.me.blockOn = !game.me.blockOn; toast(game.me.blockOn ? 'INTAKE STOWING — BLOCKER UP' : 'BLOCKER DOWN — INTAKE OUT'); }
   }
   else if (action === 'hideHud') $('hud').classList.toggle('on');
-  else if (action === 'reset' && game.mode === 'free') { stageFuel(); toast('FIELD RESET'); }
+  else if (action === 'reset' && game.mode === 'free') { stageFuel(); game.bricked = false; game.brickAt = 0; setBrickLook(false); toast('FIELD RESET'); }      // a reset also revives a bricked robot
 }
 function rumble(strength, ms) {
   const pad = (navigator.getGamepads?.() || []).find(p => p);
@@ -1260,7 +1291,7 @@ function newGame(roster, mode) {
   game.bricked = false; game.brickAt = 0; game.second = 0; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
   const zs = [MZ - 1.55, MZ + 1.55, MZ];      // in line with the bumps, clear of the trench risers
-  const pick = () => aiRobot();
+  const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
   if (roster) {                         // multiplayer: the host decided who drives what
     for (const e of roster) {
       const [x, z] = e.alliance === 'blue' ? [2.6, zs[e.slot]] : [L - 2.6, W - zs[e.slot]];
@@ -1272,8 +1303,8 @@ function newGame(roster, mode) {
     game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, opts.sx, opts.sz); game.me.player = true;
     game.robots.push(game.me);
     for (let s = 0; s < opts.size; s++) {
-      if (s > 0) game.robots.push(makeRobot(pick(), 'blue', s, false, 2.6, zs[s]));
-      game.robots.push(makeRobot(pick(), 'red', s, false, L - 2.6, W - zs[s]));
+      if (s > 0) game.robots.push(makeRobot(pick('blue'), 'blue', s, false, 2.6, zs[s]));
+      game.robots.push(makeRobot(pick('red'), 'red', s, false, L - 2.6, W - zs[s]));
     }
   }
   for (const r of game.robots) collideField(r);
@@ -1283,13 +1314,13 @@ function newGame(roster, mode) {
 }
 
 function setBrickLook(on) { $('view').classList.toggle('bricked', on); $('brick').classList.toggle('on', on); }
-function brick() {                    // the robot dies on the spot; the match ends after a slow-motion beat
+function brick() {                    // the robot dies on the spot; the match carries on and you watch from the driver station
   if (game.bricked || state !== 'play') return;
-  game.bricked = true; game.brickAt = performance.now(); game.me.blockOn = false; setBrickLook(true); rumble(1, 600);
+  game.bricked = true; game.brickAt = performance.now(); game.brickT = game.t; game.me.blockOn = false; setBrickLook(true); rumble(1, 600);
 }
 function tick() {
   game.second += STEP;
-  if (game.second >= 1) { game.second -= 1; if (opts.brick && !net.role && Math.random() < BRICK_CHANCE) brick(); }
+  if (game.second >= 1) { game.second -= 1; if (opts.brick && !net.role && Math.random() < (game.me.type.brick ?? BRICK_CHANCE)) brick(); }
   const dt = STEP, wasAuto = game.mode === 'match' && phaseIndex() === 0, before = phaseIndex();
   game.t += dt;
   if (game.mode === 'match') {
@@ -1369,8 +1400,8 @@ function tick() {
 function finish() {
   if (net.role === 'host') { sendSnapshot(); broadcast({ t: 'end' }); }
   game.done = true; state = 'results'; $('brick').classList.remove('on');
-  const s = summary(), win = game.bricked ? 'BRICKED' : s.blue.total > s.red.total ? 'BLUE WINS' : s.red.total > s.blue.total ? 'RED WINS' : 'TIE';
-  $('resTitle').textContent = win; $('resTitle').style.color = game.bricked ? '#d8262f' : win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--amber)';
+  const s = summary(), win = s.blue.total > s.red.total ? 'BLUE WINS' : s.red.total > s.blue.total ? 'RED WINS' : 'TIE';
+  $('resTitle').textContent = win; $('resTitle').style.color = win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--amber)';
   const row = (name, key, cls = '') => `<tr class="${cls}"><td>${name}</td><td>${s.blue[key]}</td><td>${s.red[key]}</td></tr>`;
   $('resTable').innerHTML = `<tr><th></th><th class="b">BLUE</th><th class="r">RED</th></tr>` + row('Auto fuel', 'auto') + row('Teleop fuel', 'tele') +
     row('Tower', 'tower') + row('Foul points', 'foul') + row('Total', 'total', 'total') + row('Ranking points', 'rp') +
@@ -1379,7 +1410,7 @@ function finish() {
   const record = !(key in best) || mine > best[key]; if (record) { best[key] = mine; save('ra.best', best); }
   const pct = me.stats.shots ? Math.round(100 * me.stats.scored / Math.max(1, me.stats.shots - me.stats.passes)) : 0;
   $('resExtra').textContent = `You (${me.type.name}): ${mine} scored from ${me.stats.shots} shots (${pct}% of hub shots), ${me.stats.passes} passes, ` +
-    `${me.stats.intaken} picked up, tower level ${me.climb}, ${me.fouls} fouls. ` + (game.bricked ? `Your robot bricked ${Math.floor(game.t)} seconds in. ` : '') + (record ? 'New personal best.' : `Personal best: ${best[key]}.`);
+    `${me.stats.intaken} picked up, tower level ${me.climb}, ${me.fouls} fouls. ` + (game.bricked ? `Your robot bricked ${Math.floor(game.brickT)} seconds in. ` : '') + (record ? 'New personal best.' : `Personal best: ${best[key]}.`);
   show('results');
 }
 
@@ -1422,10 +1453,11 @@ function render() {
   if (window.__freeCam) { /* test hook: camera driven from the console */ }
   else if (state === 'play' || state === 'results') {
     const side = me?.alliance === 'red' ? -1 : 1;                 // red drivers look down the field the other way
-    if (camMode === 0 && me) { const near = clamp(1 - ((side > 0 ? me.x : L - me.x) - 1.2) / 4.5, 0, 1);          // 1 at our wall, 0 from mid-zone outward
+    const cam = game.bricked ? 1 : camMode;                       // nothing to drive: watch from the driver station
+    if (cam === 0 && me) { const near = clamp(1 - ((side > 0 ? me.x : L - me.x) - 1.2) / 4.5, 0, 1);          // 1 at our wall, 0 from mid-zone outward
       tmp.set(me.x - side * (5.0 - near * 0.6), 4.4 - near * 2.5, me.z); camera.position.lerp(tmp, 0.12);
       camera.lookAt(me.x + side * (1.8 - near * 0.8), 0.3 + near * 0.35, me.z); camera.fov = 55; }
-    else if (camMode === 1) { camera.position.set(side > 0 ? -3.0 : L + 3.0, 2.3, MZ); camera.lookAt(side > 0 ? MX * 0.75 : L - MX * 0.75, 0, MZ); camera.fov = 62; }
+    else if (cam === 1) { camera.position.set(side > 0 ? -3.0 : L + 3.0, 2.3, MZ); camera.lookAt(side > 0 ? MX * 0.75 : L - MX * 0.75, 0, MZ); camera.fov = 62; }
     else if (me) { camera.position.set(me.x + Math.cos(me.th) * (me.half + 0.03), me.y + me.lift + 0.5, me.z + Math.sin(me.th) * (me.half + 0.03)); camera.lookAt(me.x + Math.cos(me.th) * 4, 0.5, me.z + Math.sin(me.th) * 4); camera.fov = 80; }
   } else {                                                        // slow orbit behind the menus
     const t = performance.now() / 9000; camera.position.set(MX + Math.cos(t) * 13, 8, MZ + Math.sin(t) * 11); camera.lookAt(MX, 0, MZ); camera.fov = 50;
@@ -1448,7 +1480,7 @@ function drawHud() {
   const plan = shotPlan(me);
   $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : me.type.shuttle ? (me.hold.length ? `Hold ${keyName(keys.blocker)} to eject fuel` : 'Hopper empty') : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
     : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive(me.alliance) ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
-  $('camtxt').textContent = `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
+  $('camtxt').textContent = game.bricked ? 'BRICKED · watching from the driver station' : `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
   let status = '';
   if (me.pin > 0.3) status = `PIN ${(PIN_LIMIT - me.pin).toFixed(1)}s — BACK OFF`;
   else if (me.atTower && !me.climb && me.type.climb) status = `AT TOWER — HOLD ${keyName(keys.climb)} TO CLIMB`;
@@ -1567,8 +1599,8 @@ function simulate(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (net.role === 'client') { if (state === 'play') clientFrame(now); }
   else if (state === 'play' && (!paused || net.role)) {        // a multiplayer match never pauses
-    if (game.bricked && now - game.brickAt > BRICK_SECONDS * 1000) finish();
-    acc += dt * (game.bricked ? BRICK_SLOWMO : 1); let n = 0;
+    if (game.bricked && game.brickAt && now - game.brickAt > BRICK_SECONDS * 1000) { game.brickAt = 0; setBrickLook(false); }      // banner off, the match plays on
+    acc += dt; let n = 0;
     while (acc >= STEP && n < 5 && state === 'play') { tick(); acc -= STEP; n++; }
     if (n === 5) acc = 0;
   }

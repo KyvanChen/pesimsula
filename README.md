@@ -47,7 +47,7 @@ The host's browser runs the whole match, so it ends for everyone if the host lea
 
 ## Notes
 
-Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose pile that shifts as the robot drives; the Elite Ball Knowledge and Peninsula Pups hoppers are open, so anything piled above their walls rolls back onto the field, while Re-Blitz stops at 50. The AI never drives Peninsula Pups. Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
+Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose pile that shifts as the robot drives; the Elite Ball Knowledge and Peninsula Pups hoppers are open, so anything piled above their walls rolls back onto the field, while Re-Blitz stops at 50. AI drivers play each robot its own way: Elite Ball Knowledge scores while it keeps collecting, Re-Blitz fills up and parks in front of the hub to unload, and Peninsula Pups ferries fuel from the neutral zone to its shooters (at most one per alliance, never alone). Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
 
 ## Credits
 
