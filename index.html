@@ -31,6 +31,9 @@
               padding:12px 28px; font-size:16px; }
   .foot { display:flex; justify-content:space-between; gap:10px; margin-top:20px; flex-wrap:wrap; }
   .note { color:var(--dim); font-size:13px; }
+  input { font:inherit; color:var(--text); background:#101826; border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:150px; }
+  #mpPlayers div { display:flex; justify-content:space-between; padding:6px 10px; border-radius:8px; background:#141d2c; margin-bottom:5px; font-size:14px; }
+  #mpPlayers .blue { border-left:4px solid var(--blue); } #mpPlayers .red { border-left:4px solid var(--red); }
 
   .picker { display:grid; grid-template-columns: 200px 1fr 230px; gap:20px; }
   @media (max-width: 860px) { .picker { grid-template-columns: 1fr; } }
@@ -130,6 +133,7 @@
     <div class="row"><label>Random bricking</label><span id="optBrick"></span></div>
     <div class="foot">
       <button id="btnSettings">Settings</button>
+      <button id="btnMulti">Multiplayer</button>
       <button class="go" id="btnPick">Choose robot</button>
     </div>
     <p class="note" id="best" style="margin:16px 0 0"></p>
@@ -156,6 +160,26 @@
       <button id="btnBack">Back</button>
       <button class="go" id="btnStart">Start</button>
     </div>
+  </div>
+</div>
+
+<div class="screen" id="lobby">
+  <div class="card narrow">
+    <h2>Multiplayer</h2>
+    <div id="lobbyJoin">
+      <div class="row"><label>Your name</label><input id="mpName" maxlength="12" placeholder="Driver"></div>
+      <div class="row"><label>Start a room</label><button id="btnHost">Host a game</button></div>
+      <div class="row"><label>Join a room</label><input id="mpCode" maxlength="5" placeholder="CODE" style="width:90px;text-transform:uppercase"> <button id="btnJoin">Join</button></div>
+      <p class="note">The host's computer runs the match. Mode, team size and AI skill come from the host's main menu.</p>
+    </div>
+    <div id="lobbyRoom" style="display:none">
+      <div class="row"><label>Room code</label><b id="mpRoom" style="font-size:26px;letter-spacing:.2em;color:var(--amber)"></b></div>
+      <div class="row"><label>Your robot</label><span id="mpRobot"></span></div>
+      <div class="row"><label>Your alliance</label><span id="mpSide"></span></div>
+      <div id="mpPlayers"></div>
+    </div>
+    <p class="note" id="mpStatus" style="margin:12px 0 0;min-height:18px"></p>
+    <div class="foot"><button id="btnLobbyBack">Back</button><button class="go" id="btnLobbyStart" style="display:none">Start match</button></div>
   </div>
 </div>
 
@@ -302,6 +326,207 @@ for (const a of ['blue', 'red']) {
     add(TOWER_UPX, MZ + TOWER_Z + s * (UP_GAP + UP_W) / 2, UP_W / 2, UP_W / 2, 'solid');
   }
 }
+
+// ============================================================
+// MULTIPLAYER -- one player hosts and runs the whole match; the others send their controls and
+// draw the snapshots the host sends back. Browsers talk directly (WebRTC), introduced by room code.
+// ============================================================
+const net = { role: null, me: 0, peer: null, conns: [], host: null, players: [], room: '', ticks: 0, prev: null, next: null, phase: 0, sent: 0 };
+const ROOM_PREFIX = 'rebuild-arena-room-';
+const status = text => { $('mpStatus').textContent = text || ''; };
+const myName = () => ($('mpName').value.trim() || 'Driver').slice(0, 12);
+async function openPeer(id) {
+  status('Connecting…');
+  const { Peer } = await import('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/+esm');
+  return new Promise((ok, fail) => {
+    const peer = id ? new Peer(id) : new Peer();
+    peer.on('open', () => ok(peer));
+    peer.on('error', e => { fail(e); if (net.peer === peer && state === 'lobby') status(e.type === 'peer-unavailable' ? 'No room with that code.' : 'Connection problem: ' + e.type); });
+  });
+}
+function broadcast(msg) { for (const c of net.conns) if (c.open) c.send(msg); }
+function leaveRoom() {
+  if (!net.role) return;
+  const peer = net.peer; net.role = null; net.peer = null; net.conns = []; net.host = null; net.players = []; net.prev = net.next = null;
+  try { peer?.destroy(); } catch { /* already gone */ }
+  $('lobbyJoin').style.display = ''; $('lobbyRoom').style.display = 'none'; $('btnLobbyStart').style.display = 'none'; status('');
+}
+function drawLobby() {
+  const inRoom = !!net.role;
+  $('lobbyJoin').style.display = inRoom ? 'none' : ''; $('lobbyRoom').style.display = inRoom ? '' : 'none';
+  $('btnLobbyStart').style.display = net.role === 'host' ? '' : 'none'; $('btnLobbyBack').textContent = inRoom ? 'Leave room' : 'Back';
+  if (!inRoom) return;
+  $('mpRoom').textContent = net.room;
+  const mine = net.players.find(p => p.pid === net.me) || {};
+  const setMine = change => { if (net.role === 'host') { Object.assign(net.players[0], change); hostLobby(); } else net.host.send({ t: 'set', ...change }); };
+  choice('mpRobot', ROBOTS.map(t => t.name), () => ROBOTS.findIndex(t => t.id === mine.type), i => { opts.robot = i; setMine({ type: ROBOTS[i].id }); });
+  choice('mpSide', ['Blue', 'Red'], () => mine.alliance === 'red' ? 1 : 0, i => setMine({ alliance: i ? 'red' : 'blue' }));
+  $('mpPlayers').innerHTML = net.players.map(p => `<div class="${p.alliance}"><span>${p.name.replace(/[<>&]/g, '')}${p.pid === net.me ? ' (you)' : ''}${p.pid === 0 ? ' · host' : ''}</span>` +
+    `<span>${ROBOTS.find(t => t.id === p.type)?.name || '?'}</span></div>`).join('');
+}
+// ---------- host ----------
+async function hostRoom() {
+  const room = Array.from({ length: 5 }, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join('');
+  try { net.peer = await openPeer(ROOM_PREFIX + room); } catch { status('Could not open a room. Check your connection and try again.'); return; }
+  Object.assign(net, { role: 'host', me: 0, room, conns: [], nextPid: 1, players: [{ pid: 0, name: myName(), type: ROBOTS[opts.robot].id, alliance: 'blue' }] });
+  net.peer.on('connection', conn => {
+    conn.on('data', msg => hostMessage(conn, msg));
+    conn.on('close', () => hostDrop(conn));
+    conn.on('error', () => hostDrop(conn));
+  });
+  status('Share the room code. Press Start when everyone is in.'); drawLobby();
+}
+const sideCount = a => net.players.filter(p => p.alliance === a).length;
+function hostLobby() { for (const c of net.conns) if (c.open) c.send({ t: 'lobby', players: net.players, you: c.pid, room: net.room }); if (state === 'lobby') drawLobby(); }
+function hostMessage(conn, msg) {
+  if (!msg || typeof msg !== 'object') return;
+  const player = net.players.find(p => p.pid === conn.pid);
+  if (msg.t === 'hello' && !player) {
+    if (net.players.length >= 6) { conn.send({ t: 'full' }); return; }
+    conn.pid = net.nextPid++; net.conns.push(conn);
+    net.players.push({ pid: conn.pid, name: String(msg.name || 'Driver').slice(0, 12), type: ROBOTS.some(t => t.id === msg.type) ? msg.type : ROBOTS[0].id,
+      alliance: sideCount('red') < sideCount('blue') ? 'red' : 'blue' });
+    hostLobby();
+    if (state === 'play') status('');          // joins mid-match wait in the lobby for the next one
+  } else if (msg.t === 'set' && player) {
+    if (ROBOTS.some(t => t.id === msg.type)) player.type = msg.type;
+    if ((msg.alliance === 'blue' || msg.alliance === 'red') && msg.alliance !== player.alliance && sideCount(msg.alliance) < 3) player.alliance = msg.alliance;
+    hostLobby();
+  } else if (msg.t === 'in' && Array.isArray(msg.c)) {
+    const r = game.robots.find(q => q.pid === conn.pid);
+    if (r) r.input = { c: msg.c, at: performance.now() };
+  }
+}
+function hostDrop(conn) {
+  const i = net.conns.indexOf(conn); if (i < 0) return;
+  net.conns.splice(i, 1); net.players = net.players.filter(p => p.pid !== conn.pid);
+  const r = game.robots.find(q => q.pid === conn.pid);
+  if (r && state === 'play') { r.remote = false; r.player = false; r.pid = null; toast('A DRIVER LEFT — AI TAKES OVER'); }   // their robot plays on
+  hostLobby();
+}
+function hostStart() {
+  const roster = [];
+  for (const a of ['blue', 'red']) {
+    const drivers = net.players.filter(p => p.alliance === a).slice(0, 3), size = Math.max(opts.size, drivers.length);
+    for (let slot = 0; slot < size; slot++) {
+      const p = drivers[slot];
+      roster.push(p ? { type: p.type, alliance: a, slot, pid: p.pid, name: p.name } : { type: ROBOTS[Math.floor(Math.random() * ROBOTS.length)].id, alliance: a, slot, pid: null });
+    }
+  }
+  net.ticks = 0;
+  broadcast({ t: 'start', roster, mode: opts.mode });
+  newGame(roster); state = 'play'; paused = false; show(null); toast(game.mode === 'free' ? 'FREE PLAY' : 'AUTO — GO');
+}
+function readRemote(r) {              // controls from another player's browser, limited to what the robot can do
+  const c = r.cmd, i = r.input, v = r.type.speed;
+  if (!i || performance.now() - i.at > 500) { Object.assign(c, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); return; }
+  const [vx, vz, w, flags] = i.c.map(Number), sp = Math.hypot(vx, vz) || 0, k = sp > v ? v / sp : 1;
+  c.vx = (vx || 0) * k; c.vz = (vz || 0) * k; c.w = clamp(w || 0, -r.type.turn, r.type.turn);
+  c.intake = !!(flags & 1); c.shoot = !!(flags & 2); c.climb = !!(flags & 4);
+  const block = !!(flags & 8);
+  if (r.type.blocker && block !== r.blockOn && !(block && underTrench(r.x, r.z))) r.blockOn = block;
+}
+// Snapshot layout: header 18 bytes, 51 bytes a robot, 6 bytes a fuel (millimetres; held fuel names its robot and slot).
+const ROBOT_FLOATS = ['x', 'y', 'z', 'th', 'pitch', 'lift', 'aim', 'stow', 'block', 'pin'], ROBOT_BYTES = 51;
+function sendSnapshot() {
+  if (!net.conns.length) return;
+  const n = game.robots.length, dv = new DataView(new ArrayBuffer(18 + n * ROBOT_BYTES + FUEL * 6));
+  let o = 0;
+  dv.setFloat32(o, game.t, true); o += 4;
+  for (const a of ['blue', 'red']) for (const k of ['auto', 'tele', 'foul']) { dv.setUint16(o, game.score[a][k], true); o += 2; }
+  dv.setUint8(o++, game.firstOff === 'blue' ? 1 : game.firstOff === 'red' ? 2 : 0); dv.setUint8(o++, n);
+  const owner = new Uint8Array(FUEL), slot = new Uint8Array(FUEL);
+  game.robots.forEach((r, ri) => {
+    for (const f of ROBOT_FLOATS) { dv.setFloat32(o, r[f], true); o += 4; }
+    dv.setUint8(o++, r.climb); dv.setUint8(o++, (r.cmd.intake ? 1 : 0) | (r.atTower ? 2 : 0) | (r.blockOn ? 4 : 0));
+    for (const k of ['scored', 'shots', 'passes', 'intaken']) { dv.setUint16(o, Math.min(65535, r.stats[k]), true); o += 2; }
+    dv.setUint8(o++, Math.min(255, r.fouls));
+    r.hold.forEach((i, k) => { owner[i] = ri + 1; slot[i] = k; });
+  });
+  for (let i = 0; i < FUEL; i++, o += 6) {
+    const b = balls[i];
+    if (b.on) { const t = b.body.translation(); dv.setInt16(o, clamp(t.x, -30, 30) * 1000, true); dv.setInt16(o + 2, clamp(t.y, -30, 30) * 1000, true); dv.setInt16(o + 4, clamp(t.z, -30, 30) * 1000, true); }
+    else { dv.setInt16(o, owner[i], true); dv.setInt16(o + 2, -32768, true); dv.setInt16(o + 4, slot[i], true); }
+  }
+  for (const c of net.conns) if (c.open) c.send(dv.buffer);
+}
+// ---------- client ----------
+async function joinRoom() {
+  const room = $('mpCode').value.trim().toUpperCase(); if (room.length < 4) { status('Type the room code first.'); return; }
+  let peer; try { peer = await openPeer(); } catch { status('Could not connect. Check your connection and try again.'); return; }
+  Object.assign(net, { role: 'client', peer, room, players: [], prev: null, next: null });
+  const conn = net.host = peer.connect(ROOM_PREFIX + room, { reliable: true });
+  status('Looking for room ' + room + '…');
+  conn.on('open', () => conn.send({ t: 'hello', name: myName(), type: ROBOTS[opts.robot].id }));
+  conn.on('data', clientMessage);
+  conn.on('close', () => { if (net.host !== conn) return; leaveRoom(); state = 'lobby'; paused = false; show('lobby'); drawLobby(); status('The host closed the room.'); });
+  drawLobby();
+}
+function clientMessage(msg) {
+  if (msg instanceof ArrayBuffer || ArrayBuffer.isView(msg)) { if (state === 'play') readSnapshot(msg instanceof ArrayBuffer ? msg : msg.buffer.slice(msg.byteOffset, msg.byteOffset + msg.byteLength)); return; }
+  if (msg.t === 'lobby') { net.players = msg.players; net.me = msg.you; net.room = msg.room; if (state === 'lobby') { drawLobby(); status('Waiting for the host to start.'); } }
+  else if (msg.t === 'full') { leaveRoom(); drawLobby(); status('That room is full.'); }
+  else if (msg.t === 'start') {
+    if (!msg.roster.some(e => e.pid === net.me)) return;
+    net.prev = net.next = null; net.phase = 0;
+    newGame(msg.roster, msg.mode); state = 'play'; paused = false; show(null); toast(game.mode === 'free' ? 'FREE PLAY' : 'AUTO — GO');
+  }
+  else if (msg.t === 'end' && state === 'play') { applySnapshot(1); finish(); }
+}
+function readSnapshot(buf) {
+  const dv = new DataView(buf), snap = { at: performance.now(), score: { blue: {}, red: {} }, robots: [] };
+  let o = 0;
+  snap.t = dv.getFloat32(o, true); o += 4;
+  for (const a of ['blue', 'red']) for (const k of ['auto', 'tele', 'foul']) { snap.score[a][k] = dv.getUint16(o, true); o += 2; }
+  snap.firstOff = [null, 'blue', 'red'][dv.getUint8(o++)];
+  const n = dv.getUint8(o++);
+  if (n !== game.robots.length || buf.byteLength !== 18 + n * ROBOT_BYTES + FUEL * 6) return;       // not this match
+  for (let i = 0; i < n; i++) {
+    const r = {};
+    for (const f of ROBOT_FLOATS) { r[f] = dv.getFloat32(o, true); o += 4; }
+    r.climb = dv.getUint8(o++); r.flags = dv.getUint8(o++); r.stats = {};
+    for (const k of ['scored', 'shots', 'passes', 'intaken']) { r.stats[k] = dv.getUint16(o, true); o += 2; }
+    r.fouls = dv.getUint8(o++); snap.robots.push(r);
+  }
+  snap.fuel = new Int16Array(buf.slice(o, o + FUEL * 6));
+  net.prev = net.next; net.next = snap;
+}
+function applySnapshot(a) {           // blend from the previous snapshot to the newest one
+  const nx = net.next, pv = net.prev || nx; if (!nx) return;
+  const mix = (p, q) => p + (q - p) * a;
+  game.t = mix(pv.t, nx.t); game.score = nx.score; game.firstOff = nx.firstOff;
+  game.robots.forEach((r, i) => {
+    const p = pv.robots[i], q = nx.robots[i];
+    for (const f of ['x', 'y', 'z', 'pitch', 'lift', 'stow', 'block', 'pin']) r[f] = mix(p[f], q[f]);
+    r.th = p.th + wrap(q.th - p.th) * a; r.aim = p.aim + wrap(q.aim - p.aim) * a;
+    r.climb = q.climb; r.atTower = !!(q.flags & 2); r.stats = q.stats; r.fouls = q.fouls; r.hold = [];
+    if (r !== game.me) { r.cmd.intake = !!(q.flags & 1); r.blockOn = !!(q.flags & 4); }
+  });
+  for (let i = 0; i < FUEL; i++) {
+    const k = i * 3, f = nx.fuel, g = pv.fuel, b = balls[i];
+    if (f[k + 1] === -32768) { b.on = false; if (f[k] > 0 && game.robots[f[k] - 1]) game.robots[f[k] - 1].hold[f[k + 2]] = i; continue; }
+    b.on = true;
+    const jump = g[k + 1] === -32768 || Math.abs(f[k] - g[k]) + Math.abs(f[k + 2] - g[k + 2]) > 1500;      // just appeared, or teleported
+    for (let j = 0; j < 3; j++) pos[k + j] = (jump ? f[k + j] : mix(g[k + j], f[k + j])) / 1000;
+  }
+  for (const r of game.robots) r.hold = r.hold.filter(i => i !== undefined);
+  if (game.mode === 'match' && phaseIndex() !== net.phase) { net.phase = phaseIndex(); toast(PHASES[net.phase][0] + (hubActive(game.me.alliance) ? '' : ' — YOUR HUB IS OFF')); }
+}
+function clientFrame(now) {
+  const nx = net.next, pv = net.prev;
+  if (nx) applySnapshot(pv ? clamp((now - nx.at) / Math.max(30, nx.at - pv.at), 0, 1) : 1);
+  const me = game.me; if (!me || !net.host?.open || now - net.sent < 15) return;
+  net.sent = now;
+  if (paused) Object.assign(me.cmd, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); else readHuman(me);
+  const c = me.cmd;
+  net.host.send({ t: 'in', c: [c.vx, c.vz, c.w, (c.intake ? 1 : 0) | (c.shoot ? 2 : 0) | (c.climb ? 4 : 0) | (me.blockOn ? 8 : 0)] });
+}
+$('btnMulti').onclick = () => { state = 'lobby'; show('lobby'); $('mpName').value = opts.name || ''; drawLobby(); };
+$('mpName').onchange = () => { opts.name = myName(); save('ra.opts', opts); };
+$('btnHost').onclick = hostRoom;
+$('btnJoin').onclick = joinRoom;
+$('btnLobbyStart').onclick = hostStart;
+$('btnLobbyBack').onclick = () => { if (net.role) { leaveRoom(); drawLobby(); } else { state = 'menu'; show('menu'); drawMenu(); } };
 
 // ============================================================
 // RENDERER & SCENE
@@ -615,7 +840,7 @@ function hopperSlots(type) {
   while (out.length < type.cap) out.push(out[out.length - 1]);
   return out;
 }
-function makeRobot(type, alliance, slot, human, x, z) {
+function makeRobot(type, alliance, slot, human, x, z, label) {
   const r = { type, alliance, slot, human, x, z, th: alliance === 'blue' ? 0 : Math.PI, vx: 0, vz: 0, w: 0, y: 0, pitch: 0, lift: 0,
     hold: [], cool: 0, climb: 0, climbT: 0, atTower: false, contact: false, pin: 0, fouls: 0, block: 0, stow: 0, blockOn: false, aim: alliance === 'blue' ? 0 : Math.PI,
     stats: { scored: 0, shots: 0, passes: 0, intaken: 0 },
@@ -631,7 +856,7 @@ function makeRobot(type, alliance, slot, human, x, z) {
     r.blockBody.setEnabled(false);
   }
   r.tilt = new THREE.Group(); r.mesh = buildRobotMesh(type, alliance); r.tilt.add(r.mesh);
-  const tag = labelSprite(human ? 'YOU' : type.name.toUpperCase(), human ? '#ffb300' : (alliance === 'blue' ? '#8db7ff' : '#ff97a6'));
+  const tag = labelSprite(human ? 'YOU' : (label || type.name).toUpperCase(), human ? '#ffb300' : (alliance === 'blue' ? '#8db7ff' : '#ff97a6'));
   tag.position.set(0, (type.tall ? 0.78 : 0.44) + 0.55, 0); r.tilt.add(tag);
   scene.add(r.tilt);
   return r;
@@ -898,7 +1123,7 @@ function readHuman(r) {
   }
   const c = r.cmd, v = r.type.speed, rel = !fieldRelative || camMode === 2;
   if (rel) { const co = Math.cos(r.th), si = Math.sin(r.th); c.vx = (f * co - s * si) * v; c.vz = (f * si + s * co) * v; }
-  else { c.vx = f * v; c.vz = s * v; }
+  else { const side = r.alliance === 'red' ? -1 : 1; c.vx = f * v * side; c.vz = s * v * side; }     // 'forward' is away from your own wall
   c.w = turn * r.type.turn; c.intake = intake; c.shoot = shoot; c.climb = climb;
 }
 
@@ -929,21 +1154,30 @@ function summary() {
   return out;
 }
 
-function newGame() {
+function newGame(roster, mode) {
   game.robots.forEach(removeRobot);
-  game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = opts.mode; game.skill = opts.skill;
+  game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = mode || opts.mode; game.skill = opts.skill;
   game.bricked = false; game.brickAt = 0; game.second = 0; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
-  const zs = [MZ - 2.3, MZ + 2.3, MZ];
+  const zs = [MZ - 1.55, MZ + 1.55, MZ];      // in line with the bumps, clear of the trench risers
   const pick = () => ROBOTS[Math.floor(Math.random() * ROBOTS.length)];
-  game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, opts.sx, opts.sz);
-  game.robots.push(game.me);
-  for (let s = 0; s < opts.size; s++) {
-    if (s > 0) game.robots.push(makeRobot(pick(), 'blue', s, false, 2.6, zs[s]));
-    game.robots.push(makeRobot(pick(), 'red', s, false, L - 2.6, W - zs[s]));
+  if (roster) {                         // multiplayer: the host decided who drives what
+    for (const e of roster) {
+      const [x, z] = e.alliance === 'blue' ? [2.6, zs[e.slot]] : [L - 2.6, W - zs[e.slot]];
+      const r = makeRobot(ROBOTS.find(t => t.id === e.type) || ROBOTS[0], e.alliance, e.slot, e.pid === net.me, x, z, e.name);
+      r.pid = e.pid; r.player = e.pid != null; r.remote = r.player && !r.human; r.input = null;
+      game.robots.push(r); if (r.human) game.me = r;
+    }
+  } else {
+    game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, opts.sx, opts.sz); game.me.player = true;
+    game.robots.push(game.me);
+    for (let s = 0; s < opts.size; s++) {
+      if (s > 0) game.robots.push(makeRobot(pick(), 'blue', s, false, 2.6, zs[s]));
+      game.robots.push(makeRobot(pick(), 'red', s, false, L - 2.6, W - zs[s]));
+    }
   }
   for (const r of game.robots) collideField(r);
-  stageFuel();
+  if (net.role === 'client') { for (let i = 0; i < FUEL; i++) takeBall(i); } else stageFuel();
   camMode = 0; acc = 0;
   setKeysHint();
 }
@@ -955,7 +1189,7 @@ function brick() {                    // the robot dies on the spot; the match e
 }
 function tick() {
   game.second += STEP;
-  if (game.second >= 1) { game.second -= 1; if (opts.brick && Math.random() < BRICK_CHANCE) brick(); }
+  if (game.second >= 1) { game.second -= 1; if (opts.brick && !net.role && Math.random() < BRICK_CHANCE) brick(); }
   const dt = STEP, wasAuto = game.mode === 'match' && phaseIndex() === 0, before = phaseIndex();
   game.t += dt;
   if (game.mode === 'match') {
@@ -963,13 +1197,13 @@ function tick() {
       const b = game.score.blue.auto, r = game.score.red.auto;
       game.firstOff = b > r ? 'blue' : r > b ? 'red' : (Math.random() < 0.5 ? 'blue' : 'red');
     }
-    if (phaseIndex() !== before) toast(PHASES[phaseIndex()][0] + (hubActive('blue') ? '' : ' — YOUR HUB IS OFF'));
+    if (phaseIndex() !== before) toast(PHASES[phaseIndex()][0] + (hubActive(game.me.alliance) ? '' : ' — YOUR HUB IS OFF'));
     if (game.t >= MATCH_T) { game.t = MATCH_T; finish(); return; }
   }
   readBalls();
   const sk = SKILLS[game.skill];
   for (const r of game.robots) {
-    if (r.human) readHuman(r); else think(r, dt);
+    if (r.human) readHuman(r); else if (r.remote) readRemote(r); else think(r, dt);
     if (r.type.fixed) autoAlign(r);
     r.pinning = false;
     runClimb(r, dt);
@@ -983,7 +1217,7 @@ function tick() {
     else r.pin = r.pin < 0 ? Math.min(0, r.pin + dt) : Math.max(0, r.pin - 2 * dt);
     runIntake(r);
     r.cool -= dt;
-    if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.human ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.human ? 1 : sk.rate));
+    if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.player ? 1 : sk.rate));
     const y = r.y + r.lift + 0.21;
     r.body.setNextKinematicTranslation({ x: r.x, y, z: r.z });
     r.body.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
@@ -1028,8 +1262,10 @@ function tick() {
     putBall(e[2], h.x + out * (HUB / 2 + 0.14), 0.12, h.z + off, out * 1.6, 0, off * 0.8);
     returning.splice(k, 1);
   }
+  if (net.role === 'host' && ++net.ticks % 3 === 0) sendSnapshot();     // 20 snapshots a second
 }
 function finish() {
+  if (net.role === 'host') { sendSnapshot(); broadcast({ t: 'end' }); }
   game.done = true; state = 'results'; $('brick').classList.remove('on');
   const s = summary(), win = game.bricked ? 'BRICKED' : s.blue.total > s.red.total ? 'BLUE WINS' : s.red.total > s.blue.total ? 'RED WINS' : 'TIE';
   $('resTitle').textContent = win; $('resTitle').style.color = game.bricked ? '#d8262f' : win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--amber)';
@@ -1059,7 +1295,8 @@ function render() {
   }
   for (let i = 0; i < FUEL; i++) {
     const b = balls[i];
-    if (b.on) { const t = b.body.translation(); dummy.position.set(t.x, t.y, t.z); dummy.scale.setScalar(1); }
+    if (b.on && net.role === 'client') { dummy.position.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]); dummy.scale.setScalar(1); }
+    else if (b.on) { const t = b.body.translation(); dummy.position.set(t.x, t.y, t.z); dummy.scale.setScalar(1); }
     else if (held[i]) { dummy.position.set(heldAt[i * 3], heldAt[i * 3 + 1], heldAt[i * 3 + 2]); dummy.scale.setScalar(1); }
     else { dummy.position.set(0, -50, 0); dummy.scale.setScalar(0.001); }
     dummy.updateMatrix(); ballMesh.setMatrixAt(i, dummy.matrix);
@@ -1083,10 +1320,11 @@ function render() {
   const me = game.me;
   if (window.__freeCam) { /* test hook: camera driven from the console */ }
   else if (state === 'play' || state === 'results') {
-    if (camMode === 0 && me) { const near = clamp(1 - (me.x - 1.2) / 4.5, 0, 1);          // 1 at our wall, 0 from mid-zone outward
-      tmp.set(me.x - 5.0 + near * 0.6, 4.4 - near * 2.5, me.z); camera.position.lerp(tmp, 0.12);
-      camera.lookAt(me.x + 1.8 - near * 0.8, 0.3 + near * 0.35, me.z); camera.fov = 55; }
-    else if (camMode === 1) { camera.position.set(-3.0, 2.3, MZ); camera.lookAt(MX * 0.75, 0, MZ); camera.fov = 62; }
+    const side = me?.alliance === 'red' ? -1 : 1;                 // red drivers look down the field the other way
+    if (camMode === 0 && me) { const near = clamp(1 - ((side > 0 ? me.x : L - me.x) - 1.2) / 4.5, 0, 1);          // 1 at our wall, 0 from mid-zone outward
+      tmp.set(me.x - side * (5.0 - near * 0.6), 4.4 - near * 2.5, me.z); camera.position.lerp(tmp, 0.12);
+      camera.lookAt(me.x + side * (1.8 - near * 0.8), 0.3 + near * 0.35, me.z); camera.fov = 55; }
+    else if (camMode === 1) { camera.position.set(side > 0 ? -3.0 : L + 3.0, 2.3, MZ); camera.lookAt(side > 0 ? MX * 0.75 : L - MX * 0.75, 0, MZ); camera.fov = 62; }
     else if (me) { camera.position.set(me.x + Math.cos(me.th) * (me.half + 0.03), me.y + me.lift + 0.5, me.z + Math.sin(me.th) * (me.half + 0.03)); camera.lookAt(me.x + Math.cos(me.th) * 4, 0.5, me.z + Math.sin(me.th) * 4); camera.fov = 80; }
   } else {                                                        // slow orbit behind the menus
     const t = performance.now() / 9000; camera.position.set(MX + Math.cos(t) * 13, 8, MZ + Math.sin(t) * 11); camera.lookAt(MX, 0, MZ); camera.fov = 50;
@@ -1107,7 +1345,7 @@ function drawHud() {
   $('fueltxt').textContent = `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : '');
   const plan = shotPlan(me);
   $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
-    : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive('blue') ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
+    : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive(me.alliance) ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
   $('camtxt').textContent = `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
   let status = '';
   if (me.pin > 0.3) status = `PIN ${(PIN_LIMIT - me.pin).toFixed(1)}s — BACK OFF`;
@@ -1121,8 +1359,8 @@ function toast(text) { const t = $('toast'); t.textContent = text; t.style.opaci
 // ============================================================
 // MENUS
 // ============================================================
-function show(name) { for (const id of ['menu', 'picker', 'settings', 'pause', 'results']) $(id).classList.toggle('on', id === name); $('hud').classList.toggle('on', state === 'play' || state === 'results'); }
-function setPaused(v) { if (state !== 'play') return; paused = v; down.clear(); show(v ? 'pause' : null); }
+function show(name) { for (const id of ['menu', 'picker', 'settings', 'pause', 'results', 'lobby']) $(id).classList.toggle('on', id === name); $('hud').classList.toggle('on', state === 'play' || state === 'results'); }
+function setPaused(v) { if (state !== 'play') return; paused = v; down.clear(); show(v ? 'pause' : null); $('btnRestart').style.display = net.role === 'client' ? 'none' : ''; }
 function choice(host, labels, get, set) {
   const el = $(host); el.innerHTML = '';
   labels.forEach((label, i) => { const b = document.createElement('button'); b.textContent = label; b.className = get() === i ? 'sel' : '';
@@ -1195,7 +1433,11 @@ function placeStart(e) {
 $('startmap').addEventListener('pointerdown', e => { e.target.setPointerCapture(e.pointerId); placeStart(e); });
 $('startmap').addEventListener('pointermove', e => { if (e.buttons) placeStart(e); });
 
-function startPlay() { newGame(); state = 'play'; paused = false; show(null); toast(game.mode === 'free' ? 'FREE PLAY' : 'AUTO — GO'); }
+function startPlay() {
+  if (net.role === 'client') { state = 'lobby'; paused = false; show('lobby'); drawLobby(); status('Waiting for the host to start the next match…'); return; }
+  if (net.role === 'host') { hostStart(); return; }
+  newGame(); state = 'play'; paused = false; show(null); toast(game.mode === 'free' ? 'FREE PLAY' : 'AUTO — GO');
+}
 let settingsFrom = 'menu';
 $('btnPick').onclick = () => { state = 'picker'; show('picker'); drawPicker(); };
 $('btnBack').onclick = () => { state = 'menu'; show('menu'); drawMenu(); };
@@ -1206,7 +1448,7 @@ $('btnSettingsDone').onclick = () => { rebinding = null; setKeysHint(); show(set
 $('btnResetKeys').onclick = () => { Object.assign(keys, DEFAULT_KEYS); save('ra.keys', keys); drawBinds(); };
 $('btnResume').onclick = () => setPaused(false);
 $('btnRestart').onclick = startPlay;
-$('btnQuit').onclick = $('btnMenu').onclick = () => { state = 'menu'; paused = false; setBrickLook(false); show('menu'); drawMenu(); };
+$('btnQuit').onclick = $('btnMenu').onclick = () => { leaveRoom(); state = 'menu'; paused = false; setBrickLook(false); show('menu'); drawMenu(); };
 $('btnAgain').onclick = startPlay;
 function drawSettings() {
   choice('optQuality', ['Low', 'Medium', 'High'], () => opts.quality, i => { opts.quality = i; applyQuality(); });
@@ -1223,7 +1465,8 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (opts.fps && now - lastDraw < 1000 / opts.fps - 1) return;
   const dt = Math.min(0.1, (now - last) / 1000); last = now; lastDraw = now;
-  if (state === 'play' && !paused) {
+  if (net.role === 'client') { if (state === 'play') clientFrame(now); }
+  else if (state === 'play' && (!paused || net.role)) {        // a multiplayer match never pauses
     if (game.bricked && now - game.brickAt > BRICK_SECONDS * 1000) finish();
     acc += dt * (game.bricked ? BRICK_SLOWMO : 1); let n = 0;
     while (acc >= STEP && n < 5 && state === 'play') { tick(); acc -= STEP; n++; }
@@ -1234,7 +1477,7 @@ function frame(now) {
 
 buildField(); loadFieldModel(); buildBalls(); applyQuality(); drawMenu(); show('menu');
 $('loading').remove();
-window.__game = { game, tick, opts, startPlay, summary, balls, brick, state: () => state, renderer, camera, scene, render, proc };   // for testing from the console
+window.__game = { game, tick, opts, startPlay, summary, balls, brick, net, state: () => state, renderer, camera, scene, render, proc };   // for testing from the console
 requestAnimationFrame(frame);
 </script>
 </body>

@@ -30,6 +30,12 @@ Then open http://localhost:5173. Opening `index.html` directly from disk does no
 
 Keys can be rebound in Settings. A gamepad also works.
 
+## Multiplayer
+
+Menu → Multiplayer. One player hosts and gets a five-letter room code; up to five others join with it, pick a robot and an alliance, and the host starts the match. AI fills the empty spots.
+
+The host's browser runs the whole match, so the host must keep the game tab visible, and the match ends for everyone if the host leaves. Browsers connect directly to each other (WebRTC, introduced through the public PeerJS service); some school or office networks block that.
+
 ## What is in here
 
 - `index.html` — the whole game.
@@ -40,7 +46,7 @@ Keys can be rebound in Settings. A gamepad also works.
 
 ## Notes
 
-Robot speeds, capacities and accuracy are estimates. Collisions use simple shapes, not the CAD mesh. Single player against AI only.
+Robot speeds, capacities and accuracy are estimates. Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
 
 ## Credits
 
