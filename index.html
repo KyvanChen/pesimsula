@@ -1603,8 +1603,10 @@ function render() {
       const rig = r.type.rig, [sx, sy] = headShift(rig, r.stow);
       u.turret.rotation.y = -(r.aim - r.th);
       if (u.hood) {                      // hood: down for a close, steep shot; it lifts as the target gets farther away
-        const plan = shotPlan(r), want = plan.mode === 'pass' ? 1 : clamp((plan.d - 1.3) / 3.7, 0, 1);
-        r.hood = (r.hood || 0) + clamp(want - (r.hood || 0), -0.035, 0.035);
+        // Going under a trench the hood stows itself, starting a little early so it is down in time.
+        const trench = Math.min(Math.abs(r.x - HUBX), Math.abs(r.x - (L - HUBX))) < TRENCH_D / 2 + 0.7 && Math.abs(r.z - MZ) > TRENCH_IN - 0.1;
+        const plan = shotPlan(r), want = trench ? 0 : plan.mode === 'pass' ? 1 : clamp((plan.d - 1.3) / 3.7, 0, 1);
+        r.hood = (r.hood || 0) + clamp(want - (r.hood || 0), trench ? -0.09 : -0.035, 0.035);
         const a = rig.hood.down + (rig.hood.up - rig.hood.down) * r.hood;
         u.hood.rotation.z = a; u.pinion.rotation.z = a * rig.hood.ratio;        // the gears roll along the racks as the hood moves
       }
