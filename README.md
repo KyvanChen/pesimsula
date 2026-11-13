@@ -14,7 +14,7 @@ python -m http.server 5173
 
 Then open http://localhost:5173. Opening `index.html` directly from disk does not work, because the browser blocks the model files.
 
-The menu sets the match up: timed or free play, teams of one to six robots, which robots the other alliance drives (or left to chance, or nobody at all), how much fuel is on the field, and how good the AI drivers are.
+The menu sets the match up: timed or free play, how many robots are on each side (one to six on yours, none to six against you, set separately), which robots your teammates and the other alliance drive (or left to chance), how much fuel is on the field and whether it starts in the usual places or scattered over the whole floor, and how good the AI drivers are.
 
 ## Controls
 
@@ -52,7 +52,7 @@ The host's browser runs the whole match, so it ends for everyone if the host lea
 
 ## Notes
 
-Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose pile that shifts as the robot drives; the Elite Ball Knowledge and Peninsula Pups hoppers are open, so anything piled above their walls rolls back onto the field, while Re-Blitz stops at 50. Re-Blitz raises its shooter hood to fire; while the hood is up the robot is too tall for a trench, so it cannot be pushed under one. A human player stands at each outpost with the 24 fuel staged there and throws it at their hub while it is active, making about 70% of the throws. AI drivers play each robot its own way: Elite Ball Knowledge scores while it keeps collecting, Re-Blitz fills up and parks in front of the hub to unload, and Peninsula Pups ferries fuel from the neutral zone to its shooters (at most one per alliance, never alone). Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
+Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose pile that shifts as the robot drives; the Elite Ball Knowledge and Peninsula Pups hoppers are open, so anything piled above their walls rolls back onto the field, while Re-Blitz stops at 50. Re-Blitz raises its shooter hood to fire; while the hood is up the robot is too tall for a trench, so it cannot be pushed under one. A human player stands at each outpost with the 24 fuel staged there and throws it at their hub while it is active, making about 70% of the throws. AI drivers play each robot its own way: Elite Ball Knowledge scores while it keeps collecting, Re-Blitz fills up and parks in front of the hub to unload, and Peninsula Pups ferries fuel from the neutral zone to its shooters (at most one per alliance, never alone). With their own hub off, an AI driver will sometimes go and defend a Re-Blitz or a Furious George that is unloading: it stands between a Furious George and the hub to knock down its low shots, and leans on a Re-Blitz, whose shots go over any robot. It is deliberately not very good at it. Every robot wears its team number on its bumpers. Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
 
 ## Credits
 

@@ -23,6 +23,8 @@
   p.sub { margin:0 0 20px; color:var(--dim); }
   .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; align-items:center; }
   .row > label { width:150px; color:var(--dim); font-size:14px; }
+  .row input[type=range] { width:180px; accent-color:#4aa3ff; }
+  .row > b { font-size:14px; min-width:90px; }
   button { font:inherit; color:var(--text); background:#13294f; border:1px solid var(--line);
            border-radius:8px; padding:9px 16px; cursor:pointer; }
   button:hover { border-color:var(--accent); }
@@ -149,10 +151,12 @@
     <h1>PE<span>SIM</span>SULA</h1>
     <p class="sub">A 3D driving simulator for the 2026 FRC game. Fan-made; not affiliated with FIRST.</p>
     <div class="row"><label>Mode</label><span id="optMode"></span></div>
-    <div class="row"><label>Team size</label><span id="optSize"></span></div>
-    <div class="row"><label>Opponents</label><span id="optRivals"></span></div>
+    <div class="row"><label>Your alliance</label><input type="range" id="optSize" min="1" max="6" step="1"><b id="optSizeN"></b></div>
+    <div class="row" id="rowMates"><label>Teammates</label><span id="optMates"></span></div>
+    <div class="row"><label>Opponents</label><input type="range" id="optRed" min="0" max="6" step="1"><b id="optRedN"></b></div>
     <div class="row" id="rowFoes"><label>Rival robots</label><span id="optFoes"></span></div>
     <div class="row"><label>Fuel on field</label><span id="optFuel"></span></div>
+    <div class="row"><label>Fuel layout</label><span id="optSpread"></span></div>
     <div class="row"><label>AI skill</label><span id="optSkill"></span></div>
     <div class="row"><label>Random bricking</label><span id="optBrick"></span></div>
     <div class="foot">
@@ -297,7 +301,7 @@ const ROBOTS = [
     bio: 'A turret that tracks the target and shoots on the move, over a wide roller intake. The intake stows on its four-bar, then the shot blocker swings level. No climber.' },
   // Team 2910's Re-Blitz, from their public CAD and 2026 tech binder (tools/build_robot_static.py).
   // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
-  { id: 'reblitz', num: 2910, name: 'Re-Blitz', tag: 'Jack in the Bot', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
+  { id: 'reblitz', num: 2910, blockable: true, name: 'Re-Blitz', tag: 'Jack in the Bot', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
     model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55, top: 0.46,
     hood: { pivot: [-0.283, 0.476], up: 0.96, span: [-0.36, -0.04] },      // span: the part of the robot, front to back, that the raised hood stands over      // the shooter hood swings up about the drum axle to fire; raised, it is too tall for a trench
     muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156, intake: 24,        // four-wide shooter that throws out of the back, away from the intake
@@ -308,7 +312,7 @@ const ROBOTS = [
   // Furious George, from its CAD (tools/build_robot_static.py). An underhand shooter: fuel runs down a ramp under the
   // flywheels and is thrown up and out of the back end, two at a time. Frame, hopper and shooter positions are measured;
   // speed, capacity, rate and accuracy are estimates.
-  { id: 'george', num: 840, name: 'Furious George', tag: 'Underhand shooter', color: 0x9b6bff, size: 0.86, speed: 4.7, accel: 12, turn: 6.5, cap: 60, rate: 6, acc: 0.93, tall: false, climb: 0, mass: 1.4,
+  { id: 'george', num: 840, blockable: true, name: 'Furious George', tag: 'Underhand shooter', color: 0x9b6bff, size: 0.86, speed: 4.7, accel: 12, turn: 6.5, cap: 60, rate: 6, acc: 0.93, tall: false, climb: 0, mass: 1.4,
     model: 'robot_george.glb', fixed: true, frame: [0.686, 0.686], reach: 0.29, shotY: 0.32,
     muzzle: -0.48, rear: true, lanes: 2, laneGap: 0.16, intake: 20,        // twin shooters low at the back end, just behind the bumper
     jam: 0.005, top: 0.54,      // jam: instead of bricking, each second one of its two shooters may die for the rest of the match, halving its rate
@@ -329,9 +333,9 @@ const aiRobot = mates => {
   return shooters[Math.floor(Math.random() * shooters.length)];
 };
 const SKILLS = [
-  { name: 'Rookie', speed: 0.45, acc: 0.6, rate: 0.35, replan: 0.6, fill: 0.9 },
-  { name: 'Regional', speed: 0.65, acc: 0.85, rate: 0.55, replan: 0.4, fill: 0.7 },
-  { name: 'Worlds', speed: 0.9, acc: 1.0, rate: 0.85, replan: 0.2, fill: 0.6 },
+  { name: 'Rookie', speed: 0.45, acc: 0.6, rate: 0.35, replan: 0.6, fill: 0.9, defend: 0.25 },
+  { name: 'Regional', speed: 0.65, acc: 0.85, rate: 0.55, replan: 0.4, fill: 0.7, defend: 0.4 },
+  { name: 'Worlds', speed: 0.9, acc: 1.0, rate: 0.85, replan: 0.2, fill: 0.6, defend: 0.55 },
 ];
 
 // ============================================================
@@ -348,6 +352,7 @@ const keys = load('ra.keys', DEFAULT_KEYS);
 if (['ArrowLeft', 'KeyQ'].includes(keys.turnLeft) && ['ArrowRight', 'KeyE'].includes(keys.turnRight)) { keys.turnLeft = 'KeyJ'; keys.turnRight = 'KeyL'; }
 if (keys.blocker === 'KeyB') keys.blocker = 'KeyK';
 const opts = load('ra.opts', { quality: 1, fps: 0, mode: 'match', size: 1, skill: 1, robot: 0, sx: 2.6, sz: MZ - 2.3, brick: true });
+if (!(opts.red >= 0 && opts.red <= 6)) opts.red = opts.rivals === false ? 0 : opts.size;      // settings saved before the two sides had their own sizes
 if (!ROBOTS[opts.robot]) opts.robot = 0;      // a saved pick from an older robot list
 const best = load('ra.best', {});
 
@@ -1002,6 +1007,18 @@ function stageFuel() {
     game.hp[a] = { stock: [], cool: 1 + Math.random(), swing: 0 };
     for (let k = 0; k < stash; k++) game.hp[a].stock.push(next++);    // in the outpost, with the human player
   }
+  if (opts.spread) {                 // "Everywhere": the mid-field fuel is scattered over the whole floor instead, clear of robots and field elements
+    const n = total - next, g = Math.sqrt(L * W / Math.max(1, n)) * 0.9, spots = [];
+    const blocked = (x, z) => OBSTACLES.some(o => o.kind === 'solid' && Math.abs(x - o.x) < o.hx + 0.12 && Math.abs(z - o.z) < o.hz + 0.12) ||
+      game.robots.some(r => Math.hypot(r.x - x, r.z - z) < r.radius + 0.15) ||
+      ((x < 0.9 || x > L - 0.9) && Math.abs(z - MZ) < 2.4);                         // the towers and the depots at each end
+    for (let x = g / 2; x < L; x += g) for (let z = g / 2; z < W; z += g) {
+      const px = clamp(x + (Math.random() - 0.5) * g * 0.6, 0.12, L - 0.12), pz = clamp(z + (Math.random() - 0.5) * g * 0.6, 0.12, W - 0.12);
+      if (!blocked(px, pz)) spots.push([px, pz]);
+    }
+    for (let k = spots.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [spots[k], spots[j]] = [spots[j], spots[k]]; }
+    for (const [x, z] of spots.slice(0, n)) putBall(next++, x, Math.abs(Math.abs(x - L / 2) - (L / 2 - HUBX)) < 0.9 ? 0.45 : BALL_R, z);      // over a bump or under a trench it is dropped in from just above
+  }
   const left = total - next, cols = Math.floor(206 * IN / sp), rows = Math.ceil(left / cols);
   for (let k = 0; k < left; k++) {                                   // the rest, corralled at mid-field
     const row = Math.floor(k / cols), col = k % cols;
@@ -1031,6 +1048,21 @@ function labelSprite(text, color) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
   s.scale.set(0.9, 0.225, 1); return s;
 }
+// The team number in white on every bumper, like a real robot.
+const numTex = {};
+function bumperNumbers(g, num, fx, fz, y, h, out) {
+  if (!num) return;
+  if (!numTex[num]) {
+    const c = document.createElement('canvas'); c.width = 64 * String(num).length; c.height = 96;
+    const q = c.getContext('2d'); q.font = 'bold 92px Arial Narrow, Arial, sans-serif'; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillStyle = '#fff';
+    q.fillText(String(num), c.width / 2, 52, c.width - 6);
+    numTex[num] = new THREE.CanvasTexture(c); numTex[num].colorSpace = THREE.SRGBColorSpace; numTex[num].anisotropy = 4;
+  }
+  const w = h * 0.62 * String(num).length, m = new THREE.MeshBasicMaterial({ map: numTex[num], transparent: true, depthWrite: false });
+  for (const [x, z, ry] of [[0, fz / 2 + out, 0], [0, -fz / 2 - out, Math.PI], [fx / 2 + out, 0, Math.PI / 2], [-fx / 2 - out, 0, -Math.PI / 2]]) {
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m); pl.position.set(x, y, z); pl.rotation.y = ry; g.add(pl);
+  }
+}
 const MODELS = {};
 for (const t of ROBOTS) if (t.model) {
   try {
@@ -1044,7 +1076,7 @@ for (const t of ROBOTS) if (t.model) {
 function buildModelRobot(type, alliance) {
   const g = new THREE.Group(), body = MODELS[type.id].clone(true), [fx, fz] = type.frame, rig = type.rig;
   const bumpers = () => { for (const [w, d, x, z] of [[fx, 0.08, 0, fz / 2], [fx, 0.08, 0, -fz / 2], [0.08, fz + 0.08, fx / 2, 0], [0.08, fz + 0.08, -fx / 2, 0]])
-    box(w, 0.12, d, mat(COL[alliance]), x, 0.1, z, g); };
+    box(w, 0.12, d, mat(COL[alliance]), x, 0.1, z, g); bumperNumbers(g, type.num, fx, fz, 0.1, 0.1, 0.043); };
   if (!rig) {                          // one rigid model: just bumpers and the intake light
     body.traverse(o => { if (o.isMesh) { o.castShadow = !o.material.transparent; if (o.material.transparent) o.material.depthWrite = false; } });
     g.add(body); bumpers();
@@ -1105,6 +1137,7 @@ function buildRobotMesh(type, alliance) {
   box(s - 0.08, 0.1, s - 0.08, dark, 0, 0.12, 0, g);
   for (const [w, d, x, z] of [[s, 0.09, 0, s / 2 - 0.045], [s, 0.09, 0, -s / 2 + 0.045], [0.09, s, s / 2 - 0.045, 0], [0.09, s, -s / 2 + 0.045, 0]])
     box(w, 0.13, d, mat(tint), x, 0.13, z, g);
+  bumperNumbers(g, type.num, s, s, 0.13, 0.11, 0.003);
   for (const x of [-1, 1]) for (const z of [-1, 1]) {
     const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 12), mat(0x0c0e12));
     wheel.rotation.x = Math.PI / 2; wheel.position.set(x * (s / 2 - 0.13), 0.05, z * (s / 2 - 0.13)); g.add(wheel);
@@ -1376,7 +1409,7 @@ function fire(r, sloppyScale) {
   // A good shooter cancels its own motion; a sloppy one lets the shot drift
   const drift = r.type.sotm ? 0 : sloppy * 3;        // shoot-on-the-move turrets cancel the robot's motion
   putBall(i, px, py, pz, Math.cos(yaw) * vh + r.vx * drift, v * Math.sin(th), Math.sin(yaw) * vh + r.vz * drift);
-  balls[i].shooter = r; balls[i].flying = true; balls[i].body.setLinearDamping(0); r.stats.shots++;
+  balls[i].shooter = r; balls[i].flying = true; balls[i].body.setLinearDamping(0); r.stats.shots++; r.shotAt = game.t;
   if (plan.mode === 'pass') r.stats.passes++;
   if (r.human) rumble(0.25, 40);
   return true;
@@ -1493,6 +1526,18 @@ function think(r, dt) {
     goal = [wallX(r.alliance, TOWER_D + 0.55), towerZ(r.alliance) + [-0.95, 0.95, 0][r.slot % 3]];
     c.shoot = home && r.hold.length > 0;
     if (Math.hypot(goal[0] - r.x, goal[1] - r.z) < 0.45) { c.vx = c.vz = c.w = 0; c.climb = true; c.intake = false; return; }
+  } else if (defend(r, a, sk, hubOn)) {
+    // Shot blocking: get between the shooter and its hub, as close in as it can, and stay in the way. That stops a low underhand
+    // lob. A shot from a raised hood goes clean over any robot, so against one of those it leans on the shooter instead, to
+    // shove it off its spot: it has to stand still to shoot.
+    const d = a.def, o = d.o, h = HUBS[o.alliance];
+    if (game.t >= d.next) {              // it only looks every so often, and misjudges the spot a little, so a shooter that shifts gets shots away
+      d.next = game.t + 0.5 + sk.replan * 1.5;
+      const [px, pz] = blockPoint(o), hd = Math.hypot(h.x - px, h.z - pz) || 1, gap = r.radius + o.radius + (o.type.rear ? 0.08 : -0.35), slop = 0.45 * (1 - sk.acc * 0.6);
+      d.at = [px + (h.x - px) / hd * gap + (Math.random() - 0.5) * slop, pz + (h.z - pz) / hd * gap + (Math.random() - 0.5) * slop];
+    }
+    goal = d.at; c.intake = false;
+    if (t.blocker) r.blockOn = Math.hypot(goal[0] - r.x, goal[1] - r.z) < 1.5 && !underTrench(r.x, r.z);
   } else {
     // A shuttle hauls big loads whatever the hub is doing; a dumper wants a deep hopper before it parks to unload.
     const fill = t.shuttle ? 0.6 : t.fixed ? Math.max(sk.fill, 0.75) : sk.fill;
@@ -1578,6 +1623,29 @@ function think(r, dt) {
     a.target = null;
   }
   if (a.jig > 0) { a.jig -= dt; c.vx = Math.cos(a.jigAng) * vmax * 0.75; c.vz = Math.sin(a.jigAng) * vmax * 0.75; c.w = 0; }      // no turning while it backs out: turning is what wedges a long robot
+}
+// Should this robot be blocking shots right now? Only with its own hub dark (so the other alliance is the one scoring), only
+// one blocker per alliance, and only against the robots that are worth it: a Re-Blitz or a Furious George parked in its zone
+// with a load on board. It does not always bother, it gives up after a while, and then it leaves that robot alone for a bit.
+// Where the shooter is shooting from. An AI heading home with a load has already picked its spot, so the blocker can be there first.
+const blockPoint = o => !o.player && o.ai.goal && !o.ai.goal.feed && Math.hypot(o.ai.goal[0] - o.x, o.ai.goal[1] - o.z) > 0.8 ? o.ai.goal : [o.x, o.z];
+const worthBlocking = (o, r) => {
+  if (!o.type.blockable || o.alliance === r.alliance || o.climb || o.hold.length < 8) return false;
+  if (o.player ? !(inZone(o) && game.t - (o.shotAt ?? -9) < 3) : o.ai.mode !== 'score') return false;      // a driver has to be shooting; an AI has to be going to
+  const p = blockPoint(o), h = HUBS[o.alliance];
+  return Math.hypot(p[0] - h.x, p[1] - h.z) > 1.9;                                                         // no room to get in between
+};
+function defend(r, a, sk, hubOn) {
+  const can = game.mode === 'match' && !hubOn && phaseIndex() > 0 && !(game.hold > 0);
+  if (a.def && !(can && game.t < a.def.until && worthBlocking(a.def.o, r))) { a.def = null; a.defNext = game.t + 5 + Math.random() * 5; if (r.type.blocker) r.blockOn = false; }
+  if (a.def) return true;
+  if (!can || game.t < (a.defNext || 0)) return false;
+  a.defNext = game.t + 4;                                                         // think about it again in a few seconds
+  if (game.robots.some(o => o !== r && o.alliance === r.alliance && o.ai?.def)) return false;
+  const o = game.robots.filter(q => worthBlocking(q, r)).sort((p, q) => q.hold.length - p.hold.length)[0];
+  if (!o || Math.random() > sk.defend) return false;
+  a.def = { o, until: game.t + 5 + Math.random() * 6, next: 0, at: [o.x, o.z] };
+  return true;
 }
 // Could this robot stand at (x, z): on the field, clear of field elements and of every other robot.
 function roomAt(r, x, z) {
@@ -1687,7 +1755,7 @@ function newGame(roster, mode) {
   game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = mode || opts.mode; game.skill = opts.skill;
   game.bricked = false; game.brickAt = 0; game.second = 0; game.hold = 0; game.over = false; game.hp = {}; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
-  const slots = roster ? Math.max(...roster.map(e => e.slot)) + 1 : opts.size;
+  const slots = roster ? Math.max(...roster.map(e => e.slot)) + 1 : Math.max(opts.size, opts.red);
   // three robots line up with the bumps and the hub; more than that spread along the whole starting line
   const zs = slots <= 3 ? [MZ - 1.55, MZ + 1.55, MZ] : [MZ - 1.75, MZ + 1.75, MZ - 0.6, MZ + 0.6, MZ - 2.95, MZ + 2.95];
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
@@ -1702,11 +1770,11 @@ function newGame(roster, mode) {
   } else {
     game.me = makeRobot(ROBOTS[opts.robot], 'blue', 0, true, ...startSpot(opts.sx, opts.sz, ROBOTS[opts.robot])); game.me.player = true;
     game.robots.push(game.me);
-    for (let s = 0; s < opts.size; s++) {
-      if (s > 0) { const t = pick('blue'); game.robots.push(makeRobot(t, 'blue', s, false, LINE - startFront(t), zs[s])); }
-      if (opts.rivals === false) continue;                                          // playing with nobody against you
-      const chosen = ROBOTS[opts.foes?.[s] ?? -1], t = chosen || pick('red');      // the rival robots picked in the menu, or left to chance
-      game.robots.push(makeRobot(t, 'red', s, false, L - LINE + startFront(t), W - zs[s]));
+    // The robots picked in the menu go in first, so the ones left to chance are chosen to suit them.
+    for (const [al, n, picks, from] of [['blue', opts.size, opts.mates, 1], ['red', opts.red, opts.foes, 0]]) {
+      const types = []; for (let s = from; s < n; s++) types[s] = ROBOTS[picks?.[s] ?? -1];
+      for (let s = from; s < n; s++) if (types[s]) game.robots.push(makeRobot(types[s], al, s, false, al === 'blue' ? LINE - startFront(types[s]) : L - LINE + startFront(types[s]), al === 'blue' ? zs[s] : W - zs[s]));
+      for (let s = from; s < n; s++) if (!types[s]) { const t = pick(al); game.robots.push(makeRobot(t, al, s, false, al === 'blue' ? LINE - startFront(t) : L - LINE + startFront(t), al === 'blue' ? zs[s] : W - zs[s])); }
     }
   }
   // An intake that can stow starts stowed, with the shot blocker down. Under a trench there is no room, so there it starts out.
@@ -1881,7 +1949,7 @@ function finish() {
   $('resTable').innerHTML = `<tr><th></th><th class="b">BLUE</th><th class="r">RED</th></tr>` + row('Auto fuel', 'auto', '', 1) + row('Teleop fuel', 'tele', '', 1) +
     row('Tower', 'tower', '', 1) + row('Foul points', 'foul', '', 1) + row('Total', 'total', 'total') + row('Ranking points', 'rp') +
     `<tr><td>Bonus RP</td><td>${s.blue.bonus.join(', ') || '—'}</td><td>${s.red.bonus.join(', ') || '—'}</td></tr>`;
-  const me = game.me, key = `${me.type.id}.${opts.size}`, mine = me.stats.scored;
+  const me = game.me, key = `${me.type.id}.${opts.size === opts.red ? opts.size : opts.size + 'v' + opts.red}`, mine = me.stats.scored;
   const record = !(key in best) || mine > best[key]; if (record) { best[key] = mine; save('ra.best', best); }
   const pct = me.stats.shots ? Math.round(100 * me.stats.scored / Math.max(1, me.stats.shots - me.stats.passes)) : 0;
   $('resExtra').textContent = `You (${me.type.num} ${me.type.name}): ${mine} scored from ${me.stats.shots} shots (${pct}% of hub shots), ${me.stats.passes} passes, ` +
@@ -2013,25 +2081,32 @@ function drawBinds() {
 }
 // One button per rival robot: click to step through Random and each robot in turn.
 const FUEL_CHOICES = [504, 360, 240, 120];      // 504 is the real field
-function drawFoes() {
-  const el = $('optFoes'); el.innerHTML = ''; $('rowFoes').style.display = opts.rivals === false ? 'none' : '';
-  if (!Array.isArray(opts.foes)) opts.foes = [];
-  for (let k = 0; k < opts.size; k++) {
-    const pick = opts.foes[k] ?? -1, b = document.createElement('button');
+function drawPicks(host, row, list, from, n) {
+  const el = $(host); el.innerHTML = ''; $(row).style.display = n > from ? '' : 'none';
+  for (let k = from; k < n; k++) {
+    const pick = list[k] ?? -1, b = document.createElement('button');
     b.textContent = pick >= 0 && ROBOTS[pick] ? `${ROBOTS[pick].num} ${ROBOTS[pick].name}` : 'Random'; b.className = pick >= 0 ? 'sel' : '';
-    b.onclick = () => { opts.foes[k] = pick + 1 >= ROBOTS.length ? -1 : pick + 1; save('ra.opts', opts); drawFoes(); };
+    b.onclick = () => { list[k] = pick + 1 >= ROBOTS.length ? -1 : pick + 1; save('ra.opts', opts); drawFoes(); };
     el.appendChild(b); el.append(' ');
   }
 }
+function drawFoes() {
+  if (!Array.isArray(opts.foes)) opts.foes = [];
+  if (!Array.isArray(opts.mates)) opts.mates = [];
+  drawPicks('optMates', 'rowMates', opts.mates, 1, opts.size);       // slot 0 on your side is you
+  drawPicks('optFoes', 'rowFoes', opts.foes, 0, opts.red);
+  $('optSizeN').textContent = opts.size === 1 ? 'Just you' : `${opts.size} robots`;
+  $('optRedN').textContent = opts.red === 0 ? 'Nobody' : opts.red === 1 ? '1 robot' : `${opts.red} robots`;
+}
 function drawMenu() {
   choice('optMode', ['Timed match', 'Free play'], () => opts.mode === 'match' ? 0 : 1, i => opts.mode = i ? 'free' : 'match');
-  choice('optSize', [1, 2, 3, 4, 5, 6].map(n => `${n} v ${n}`), () => opts.size - 1, i => { opts.size = i + 1; drawFoes(); });
-  choice('optRivals', ['AI robots', 'Nobody'], () => opts.rivals === false ? 1 : 0, i => { opts.rivals = !i; drawFoes(); });
+  for (const [id, key] of [['optSize', 'size'], ['optRed', 'red']]) { $(id).value = opts[key]; $(id).oninput = () => { opts[key] = +$(id).value; save('ra.opts', opts); drawFoes(); }; }
   drawFoes();
   choice('optFuel', FUEL_CHOICES.map(String), () => Math.max(0, FUEL_CHOICES.indexOf(opts.fuel)), i => opts.fuel = FUEL_CHOICES[i]);
+  choice('optSpread', ['Standard', 'Everywhere'], () => opts.spread ? 1 : 0, i => opts.spread = !!i);
   choice('optSkill', SKILLS.map(s => s.name), () => opts.skill, i => opts.skill = i);
   choice('optBrick', ['On', 'Off'], () => opts.brick ? 0 : 1, i => opts.brick = !i);
-  const lines = Object.entries(best).map(([k, v]) => { const [id, n] = k.split('.'); return `${ROBOTS.find(r => r.id === id)?.name || id} ${n}v${n}: ${v}`; });
+  const lines = Object.entries(best).map(([k, v]) => { const [id, n] = k.split('.'); return `${ROBOTS.find(r => r.id === id)?.name || id} ${n.includes('v') ? n : n + 'v' + n}: ${v}`; });
   $('best').textContent = lines.length ? 'Personal bests (fuel you scored) — ' + lines.join(' · ') : '';
 }
 
