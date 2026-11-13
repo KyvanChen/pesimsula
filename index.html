@@ -149,7 +149,10 @@
     <h1>PE<span>SIM</span>SULA</h1>
     <p class="sub">A 3D driving simulator for the 2026 FRC game. Fan-made; not affiliated with FIRST.</p>
     <div class="row"><label>Mode</label><span id="optMode"></span></div>
-    <div class="row"><label>Other robots</label><span id="optSize"></span></div>
+    <div class="row"><label>Team size</label><span id="optSize"></span></div>
+    <div class="row"><label>Opponents</label><span id="optRivals"></span></div>
+    <div class="row" id="rowFoes"><label>Rival robots</label><span id="optFoes"></span></div>
+    <div class="row"><label>Fuel on field</label><span id="optFuel"></span></div>
     <div class="row"><label>AI skill</label><span id="optSkill"></span></div>
     <div class="row"><label>Random bricking</label><span id="optBrick"></span></div>
     <div class="foot">
@@ -812,6 +815,7 @@ function box(w, h, d, material, x, y, z, parent = boxParent) {
 await RAPIER.init();
 const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
 world.timestep = STEP;
+const SUBSTEPS = 2;                        // physics steps per game tick
 world.numSolverIterations = 10;
 function fixedBox(hx, hy, hz, x, y, z, rest = 0.4) {
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z));
@@ -988,14 +992,17 @@ function stageFuel() {
   for (const r of game.robots) { r.hold = []; for (let k = 0; k < Math.min(PRELOAD, r.type.cap); k++) { pos[next * 3] = PRELOADED; r.hold.push(next++); } }
   heldBy.fill(0);
   const sp = BALL_R * 2 + 0.008;
+  // The menu sets how much fuel is in play. Preloads come first; each depot and outpost gets its usual 24 when there is enough to go round.
+  const total = clamp(opts.fuel || FUEL, next, FUEL), stash = clamp(Math.floor((total - next) * 0.19), 0, 24);
   for (const a of ['blue', 'red']) {
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {         // 24 in the depot
-      const [x, z] = mirror(a, 0.1 + i * sp, MZ + DEPOT_OFF + (j - 2.5) * sp); putBall(next++, x, BALL_R, z);
+    for (let k = 0; k < stash; k++) {                                   // in the depot
+      const i = Math.floor(k / 6), j = k % 6, [x, z] = mirror(a, 0.1 + i * sp, MZ + DEPOT_OFF + (j - 2.5) * sp); putBall(next++, x, BALL_R, z);
     }
+    if (!game.robots.some(r => r.alliance === a)) { for (let k = 0; k < stash; k++) { const i = Math.floor(k / 6), j = k % 6, [x, z] = mirror(a, 0.35 + i * sp, CHUTE_Z + (j - 2.5) * sp); putBall(next++, x, BALL_R, z); } continue; }      // nobody on this alliance: no human player either, the fuel just sits there
     game.hp[a] = { stock: [], cool: 1 + Math.random(), swing: 0 };
-    for (let k = 0; k < 24; k++) game.hp[a].stock.push(next++);       // 24 in the outpost, with the human player
+    for (let k = 0; k < stash; k++) game.hp[a].stock.push(next++);    // in the outpost, with the human player
   }
-  const left = FUEL - next, cols = Math.floor(206 * IN / sp), rows = Math.ceil(left / cols);
+  const left = total - next, cols = Math.floor(206 * IN / sp), rows = Math.ceil(left / cols);
   for (let k = 0; k < left; k++) {                                   // the rest, corralled at mid-field
     const row = Math.floor(k / cols), col = k % cols;
     putBall(next++, MX + (row - (rows - 1) / 2) * sp, BALL_R, MZ + (col - (cols - 1) / 2) * sp);
@@ -1210,6 +1217,8 @@ function makeRobot(type, alliance, slot, human, x, z, label) {
   // It also stands as tall as the robot does, so a shot that hits another robot bounces off: a tall one blocks a low shooter.
   const top = type.top || 0.4, low = -0.26;
   world.createCollider(RAPIER.ColliderDesc.cuboid(hb.back, (top - low) / 2, hb.side).setTranslation(0, (top + low) / 2 - 0.21, 0).setFriction(0.2).setRestitution(0.05), r.body);
+  const out = hitbox(type, 0);         // the intake out front, low to the floor
+  if (out.front > hb.back + 0.05) r.nose = world.createCollider(RAPIER.ColliderDesc.cuboid((out.front - hb.back) / 2, 0.15, hb.side * 0.92).setTranslation((out.front + hb.back) / 2, -0.06, 0).setFriction(0.2).setRestitution(0.05), r.body);
   if (type.blocker && type.rig) {     // the level plate is a real obstacle for fuel in flight
     r.blockBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, -20, z));
     world.createCollider(RAPIER.ColliderDesc.cuboid(type.rig.plate.length / 2, 0.02, type.rig.plate.halfWidth).setRestitution(0.3), r.blockBody);
@@ -1448,6 +1457,15 @@ function pickBall(r) {
 // Where each robot likes to unload from, once it is carrying enough.
 function scoreSpot(r) {
   const t = r.type;
+  if (t.shuttle) {
+    // Too tall for a trench, but fuel is not: it parks at the mouth of a trench on the neutral side and rolls its load through,
+    // which is much quicker than hauling it over a bump. If both mouths are busy it goes over the bump as before.
+    const x = wallX(r.alliance, LINE + TRENCH_D + hitbox(t).front + 0.15);
+    for (const z of [ALL_LANES[0], ALL_LANES[ALL_LANES.length - 1]].sort((p, q) => Math.abs(p - r.z) - Math.abs(q - r.z))) {
+      if (game.robots.some(o => o !== r && Math.hypot(o.x - x, o.z - z) < 1.2)) continue;
+      const mouth = [x, z]; mouth.feed = true; return mouth;
+    }
+  }
   if (t.shuttle) return [wallX(r.alliance, LINE - 2.4), BUMP_LANES.reduce((b, v) => Math.abs(v - r.z) < Math.abs(b - r.z) ? v : b)];   // over the bump it came in by, clear of the lane
   // A shooter can score from anywhere in its zone, so it takes the nearest open patch of floor: clear of the tower and the
   // wall, not claimed by a partner, with nobody standing on it. A little randomness keeps them from all favouring one place.
@@ -1472,7 +1490,7 @@ function think(r, dt) {
   c.intake = t.shuttle ? !home : !t.overflow || r.hold.length < t.cap + 3; c.shoot = false; c.climb = false;
   let goal, arrive = true, collecting = false;
   if (r.type.climb && left < a.climbAt) {
-    goal = [wallX(r.alliance, TOWER_D + 0.55), towerZ(r.alliance) + [-0.95, 0.95, 0][r.slot]];
+    goal = [wallX(r.alliance, TOWER_D + 0.55), towerZ(r.alliance) + [-0.95, 0.95, 0][r.slot % 3]];
     c.shoot = home && r.hold.length > 0;
     if (Math.hypot(goal[0] - r.x, goal[1] - r.z) < 0.45) { c.vx = c.vz = c.w = 0; c.climb = true; c.intake = false; return; }
   } else {
@@ -1495,7 +1513,7 @@ function think(r, dt) {
       const near = Math.hypot(goal[0] - r.x, goal[1] - r.z) < 0.6;
       a.wait = home && !near && slow ? (a.wait || 0) + dt : 0;
       const here = a.wait > 1;               // still cannot get there: unload from where it stands
-      if (t.shuttle) c.shoot = home && near;                 // roll the load out once it is over the bump
+      if (t.shuttle) c.shoot = near && (goal.feed ? Math.abs(wrap((r.alliance === 'blue' ? Math.PI : 0) - r.th)) < 0.3 : home);      // roll the load out: through the trench once it is lined up, or over the bump
       else if (t.fixed) {                                     // a dumper shoots straight: stop first, then let it line up
         if (home) { if (here) goal = [r.x, r.z]; c.shoot = hubOn && (near || here) && slow; }
         else if (!hubOn && !underTrench(r.x, r.z) && Math.abs(Math.abs(r.x - L / 2) - (L / 2 - HUBX)) > BAND + 0.3) { goal = [r.x, r.z]; c.shoot = slow; }   // dead hub: park and pass it home
@@ -1515,9 +1533,10 @@ function think(r, dt) {
   const dx = wx - r.x, dz = wz - r.z, d = Math.hypot(dx, dz);
   let speed = vmax; if (arrive && final) speed *= Math.min(1, d / 0.7);
   let want = r.th;
-  if (a.mode === 'score' && home && final && d < 1) {
+  if (a.mode === 'score' && (home || goal.feed) && final && d < 1) {
     const h = HUBS[r.alliance];
-    if (t.shuttle) want = r.z < MZ ? Math.PI / 2 : -Math.PI / 2;               // unload across the zone, in front of the hub, where the shooters can get at it
+    if (goal.feed) want = r.alliance === 'blue' ? Math.PI : 0;                    // nose into the trench, toward its own wall
+    else if (t.shuttle) want = r.z < MZ ? Math.PI / 2 : -Math.PI / 2;               // unload across the zone, in front of the hub, where the shooters can get at it
     else if (!t.sotm) want = Math.atan2(h.z - r.z, h.x - r.x) + (t.rear ? Math.PI : 0);
   }
   else if (d > 0.3) want = Math.atan2(dz, dx);
@@ -1668,7 +1687,9 @@ function newGame(roster, mode) {
   game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = mode || opts.mode; game.skill = opts.skill;
   game.bricked = false; game.brickAt = 0; game.second = 0; game.hold = 0; game.over = false; game.hp = {}; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
-  const zs = [MZ - 1.55, MZ + 1.55, MZ];      // in line with the bumps, clear of the trench risers
+  const slots = roster ? Math.max(...roster.map(e => e.slot)) + 1 : opts.size;
+  // three robots line up with the bumps and the hub; more than that spread along the whole starting line
+  const zs = slots <= 3 ? [MZ - 1.55, MZ + 1.55, MZ] : [MZ - 1.75, MZ + 1.75, MZ - 0.6, MZ + 0.6, MZ - 2.95, MZ + 2.95];
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
   if (roster) {                         // multiplayer: the host decided who drives what
     for (const e of roster) {
@@ -1683,7 +1704,9 @@ function newGame(roster, mode) {
     game.robots.push(game.me);
     for (let s = 0; s < opts.size; s++) {
       if (s > 0) { const t = pick('blue'); game.robots.push(makeRobot(t, 'blue', s, false, LINE - startFront(t), zs[s])); }
-      const t = pick('red'); game.robots.push(makeRobot(t, 'red', s, false, L - LINE + startFront(t), W - zs[s]));
+      if (opts.rivals === false) continue;                                          // playing with nobody against you
+      const chosen = ROBOTS[opts.foes?.[s] ?? -1], t = chosen || pick('red');      // the rival robots picked in the menu, or left to chance
+      game.robots.push(makeRobot(t, 'red', s, false, L - LINE + startFront(t), W - zs[s]));
     }
   }
   // An intake that can stow starts stowed, with the shot blocker down. Under a trench there is no room, so there it starts out.
@@ -1744,8 +1767,9 @@ function tick() {
     if (r.type.shuttle) { if (ejecting(r) && r.cool <= 0 && !r.climb && eject(r)) r.cool = 1 / r.type.rate; }
     else if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / Math.max(0.5, r.type.rate * (r.jam ? 0.5 : 1) * (r.player ? 1 : sk.rate) + gauss() * RATE_SD);
     const y = r.y + r.lift + 0.21;
-    r.body.setNextKinematicTranslation({ x: r.x, y, z: r.z });
-    r.body.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
+    r.kt = { x: r.x, y, z: r.z, th: r.th };          // where its body has to be by the end of this tick
+    // The intake is solid to fuel unless it is actually taking fuel in: a full or idle intake ploughs fuel, it does not swallow it.
+    if (r.nose) { const taking = r.cmd.intake && (r.type.overflow ? 150 : r.type.cap) > r.hold.length && !r.climb && r.stow <= 0.1 && !ejecting(r); r.nose.setEnabled(!taking && r.stow < 0.5); }
     if (r.type.turret) {                 // the turret tracks its target whatever the chassis is doing
       const plan = shotPlan(r);
       r.aim += clamp(wrap(Math.atan2(plan.z - r.z, plan.x - r.x) - r.aim), -9 * dt, 9 * dt);
@@ -1772,13 +1796,24 @@ function tick() {
       if (up !== r.blockBody.isEnabled()) r.blockBody.setEnabled(up);
       if (up) {
         const [fwd, high] = blockerUpAt(r.type);
-        r.blockBody.setNextKinematicTranslation({ x: r.x + Math.cos(r.th) * fwd, y: r.y + r.lift + high, z: r.z + Math.sin(r.th) * fwd });
-        r.blockBody.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
-      }
+        r.bt = { x: r.x + Math.cos(r.th) * fwd, y: r.y + r.lift + high, z: r.z + Math.sin(r.th) * fwd, th: r.th };
+      } else r.bt = r.bp = null;
     }
   }
   stepHoppers(dt, true);
-  world.step();
+  // Physics runs in half-steps with every robot eased to its new place across them. A robot is moved, not pushed, so in one
+  // big step a fast drive or spin could carry it clean over a fuel; smaller moves let the fuel be shoved out of the way instead.
+  const ease = (body, p, q, f) => {
+    const jump = !p || Math.hypot(q.x - p.x, q.z - p.z) > 1, a = jump ? q : p, th = a.th + wrap(q.th - a.th) * f;
+    body.setNextKinematicTranslation({ x: a.x + (q.x - a.x) * f, y: a.y + (q.y - a.y) * f, z: a.z + (q.z - a.z) * f });
+    body.setNextKinematicRotation({ x: 0, y: Math.sin(-th / 2), z: 0, w: Math.cos(-th / 2) });
+  };
+  world.timestep = STEP / SUBSTEPS;
+  for (let k = 1; k <= SUBSTEPS; k++) {
+    for (const r of game.robots) { ease(r.body, r.kp, r.kt, k / SUBSTEPS); if (r.bt) ease(r.blockBody, r.bp, r.bt, k / SUBSTEPS); }
+    world.step();
+  }
+  for (const r of game.robots) { r.kp = r.kt; r.bp = r.bt; }
   // fuel that dropped into a hub: score it, then roll it back out toward mid-field
   for (let i = 0; i < FUEL; i++) {
     const b = balls[i]; if (!b.on) continue;
@@ -1976,9 +2011,24 @@ function drawBinds() {
     b.onclick = () => { rebinding = a; drawBinds(); }; row.appendChild(b); el.appendChild(row);
   }
 }
+// One button per rival robot: click to step through Random and each robot in turn.
+const FUEL_CHOICES = [504, 360, 240, 120];      // 504 is the real field
+function drawFoes() {
+  const el = $('optFoes'); el.innerHTML = ''; $('rowFoes').style.display = opts.rivals === false ? 'none' : '';
+  if (!Array.isArray(opts.foes)) opts.foes = [];
+  for (let k = 0; k < opts.size; k++) {
+    const pick = opts.foes[k] ?? -1, b = document.createElement('button');
+    b.textContent = pick >= 0 && ROBOTS[pick] ? ROBOTS[pick].name : 'Random'; b.className = pick >= 0 ? 'sel' : '';
+    b.onclick = () => { opts.foes[k] = pick + 1 >= ROBOTS.length ? -1 : pick + 1; save('ra.opts', opts); drawFoes(); };
+    el.appendChild(b); el.append(' ');
+  }
+}
 function drawMenu() {
   choice('optMode', ['Timed match', 'Free play'], () => opts.mode === 'match' ? 0 : 1, i => opts.mode = i ? 'free' : 'match');
-  choice('optSize', ['Just a rival', '2 v 2', '3 v 3'], () => opts.size - 1, i => opts.size = i + 1);
+  choice('optSize', [1, 2, 3, 4, 5, 6].map(n => `${n} v ${n}`), () => opts.size - 1, i => { opts.size = i + 1; drawFoes(); });
+  choice('optRivals', ['AI robots', 'Nobody'], () => opts.rivals === false ? 1 : 0, i => { opts.rivals = !i; drawFoes(); });
+  drawFoes();
+  choice('optFuel', FUEL_CHOICES.map(String), () => Math.max(0, FUEL_CHOICES.indexOf(opts.fuel)), i => opts.fuel = FUEL_CHOICES[i]);
   choice('optSkill', SKILLS.map(s => s.name), () => opts.skill, i => opts.skill = i);
   choice('optBrick', ['On', 'Off'], () => opts.brick ? 0 : 1, i => opts.brick = !i);
   const lines = Object.entries(best).map(([k, v]) => { const [id, n] = k.split('.'); return `${ROBOTS.find(r => r.id === id)?.name || id} ${n}v${n}: ${v}`; });

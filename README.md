@@ -14,6 +14,8 @@ python -m http.server 5173
 
 Then open http://localhost:5173. Opening `index.html` directly from disk does not work, because the browser blocks the model files.
 
+The menu sets the match up: timed or free play, teams of one to six robots, which robots the other alliance drives (or left to chance, or nobody at all), how much fuel is on the field, and how good the AI drivers are.
+
 ## Controls
 
 | Key | Action |
