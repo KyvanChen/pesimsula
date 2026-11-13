@@ -11,11 +11,11 @@
   html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
                font-family: "Segoe UI", system-ui, sans-serif; overflow:hidden; user-select:none; }
   canvas#view { position:fixed; inset:0; width:100%; height:100%; display:block; }
-  .screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+  .screen { position:fixed; inset:0; display:none; align-items:flex-start; justify-content:center;
             background:rgba(4,10,24,.82); z-index:10; padding:16px; overflow:auto; }
   .screen.on { display:flex; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:26px 30px;
-          width:min(960px, 100%); box-shadow:0 20px 60px rgba(0,0,0,.5); }
+          width:min(960px, 100%); box-shadow:0 20px 60px rgba(0,0,0,.5); margin:auto; }      /* auto margins centre it, and a card taller than the window still scrolls from its top */
   .card.narrow { width:min(520px, 100%); }
   h1 { margin:0 0 4px; font-size:34px; letter-spacing:.06em; }
   h1 span { color:var(--accent); }
@@ -31,6 +31,26 @@
   button.sel { background:var(--accent); color:#051026; border-color:var(--accent); font-weight:600; }
   button.go { background:var(--accent); color:#051026; border-color:var(--accent); font-weight:700;
               padding:12px 28px; font-size:16px; }
+  .card.menu { width:min(700px, 100%); padding:20px 26px; }
+  .card.menu .row { margin-bottom:10px; }
+  .card.menu p.sub { margin-bottom:6px; }
+  .card.menu h3 { margin:14px 0 9px; }
+  h3 { margin:18px 0 10px; padding-bottom:5px; font-size:12px; font-weight:600; letter-spacing:.14em; color:var(--dim); text-transform:uppercase; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
+  h3 b { color:var(--accent); letter-spacing:.06em; }
+  .row .hint { color:var(--dim); font-size:13px; flex:1 1 180px; }
+  select { font:inherit; color:var(--text); background:#081630; border:1px solid var(--line); border-radius:8px; padding:6px 8px; min-width:0; cursor:pointer; }
+  select:hover, select:focus { border-color:var(--accent); outline:none; }
+  .teams { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width: 620px) { .teams { grid-template-columns:1fr; } }
+  .team { background:#0a1731; border:1px solid var(--line); border-top:3px solid var(--blue); border-radius:10px; padding:12px 14px; }
+  .team.red { border-top-color:var(--red); }
+  .thead { display:flex; justify-content:space-between; font-size:14px; color:var(--dim); }
+  .thead b { color:var(--text); }
+  .team input[type=range] { width:100%; margin:8px 0 4px; padding:0; accent-color:#4aa3ff; }
+  .slot { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:13px; }
+  .slot span { width:82px; color:var(--dim); }
+  .slot select { flex:1; }
+  .foot .left { display:flex; gap:10px; flex-wrap:wrap; }
   .foot { display:flex; justify-content:space-between; gap:10px; margin-top:20px; flex-wrap:wrap; }
   .note { color:var(--dim); font-size:13px; }
   input { font:inherit; color:var(--text); background:#081630; border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:150px; }
@@ -147,22 +167,43 @@
 </div>
 
 <div class="screen" id="menu">
-  <div class="card narrow">
+  <div class="card menu">
     <h1>PE<span>SIM</span>SULA</h1>
     <p class="sub">A 3D driving simulator for the 2026 FRC game. Fan-made; not affiliated with FIRST.</p>
-    <div class="row"><label>Mode</label><span id="optMode"></span></div>
-    <div class="row"><label>Your alliance</label><input type="range" id="optSize" min="1" max="6" step="1"><b id="optSizeN"></b></div>
-    <div class="row" id="rowMates"><label>Teammates</label><span id="optMates"></span></div>
-    <div class="row"><label>Opponents</label><input type="range" id="optRed" min="0" max="6" step="1"><b id="optRedN"></b></div>
-    <div class="row" id="rowFoes"><label>Rival robots</label><span id="optFoes"></span></div>
-    <div class="row" id="rowFuel"><label>Fuel on field</label><span id="optFuel"></span></div>
+    <h3>Match</h3>
+    <div class="row"><label>Mode</label><span id="optMode"></span><span class="hint" id="hintMode"></span></div>
+    <h3>Teams <b id="vs"></b></h3>
+    <div class="teams">
+      <div class="team">
+        <div class="thead"><span>Your alliance</span><b id="optSizeN"></b></div>
+        <input type="range" id="optSize" min="1" max="6" step="1" aria-label="Robots on your alliance">
+        <div class="slot"><span>You</span><select id="optMe" aria-label="Your robot"></select></div>
+        <div id="rowMates"><div id="optMates"></div></div>
+      </div>
+      <div class="team red">
+        <div class="thead"><span>Opponents</span><b id="optRedN"></b></div>
+        <input type="range" id="optRed" min="0" max="6" step="1" aria-label="Robots against you">
+        <div id="rowFoes"><div id="optFoes"></div></div>
+        <p class="note" id="noFoes" style="margin:8px 0 0">Nobody against you: the field is yours to practise on.</p>
+      </div>
+    </div>
+    <h3>Field</h3>
     <div class="row"><label>Fuel layout</label><span id="optSpread"></span></div>
-    <div class="row"><label>AI skill</label><span id="optSkill"></span></div>
-    <div class="row"><label>Random bricking</label><span id="optBrick"></span></div>
+    <div class="row" id="rowFuel"><label>Fuel on field</label><span id="optFuel"></span><span class="hint">504 is a real field.</span></div>
+    <div class="row" style="margin-top:-6px"><label></label><span class="hint" id="hintSpread"></span></div>
+    <h3>AI drivers</h3>
+    <div class="row"><label>Skill</label><span id="optSkill"></span><span class="hint" id="hintSkill"></span></div>
+    <div class="row"><label>Random bricking</label><span id="optBrick"></span><span class="hint" id="hintBrick"></span></div>
     <div class="foot">
-      <button id="btnSettings">Settings</button>
-      <button id="btnMulti">Multiplayer</button>
-      <button class="go" id="btnPick">Choose robot</button>
+      <div class="left">
+        <button id="btnSettings">Settings &amp; keys</button>
+        <button id="btnMulti">Multiplayer</button>
+        <button id="btnDefaults" title="Put every option on this screen back to how it started">Reset</button>
+      </div>
+      <div class="left">
+        <button id="btnPick" title="Compare the robots and choose where you start">Robot details &amp; start spot</button>
+        <button class="go" id="btnQuick">Start</button>
+      </div>
     </div>
     <p class="note" id="best" style="margin:16px 0 0"></p>
   </div>
@@ -2111,7 +2152,7 @@ function setPaused(v) { if (state !== 'play') return; paused = v; down.clear(); 
 function choice(host, labels, get, set) {
   const el = $(host); el.innerHTML = '';
   labels.forEach((label, i) => { const b = document.createElement('button'); b.textContent = label; b.className = get() === i ? 'sel' : '';
-    b.onclick = () => { set(i); save('ra.opts', opts); choice(host, labels, get, set); }; el.appendChild(b); el.append(' '); });
+    b.onclick = () => { set(i); save('ra.opts', opts); choice(host, labels, get, set); drawHints(); }; el.appendChild(b); el.append(' '); });
 }
 const keyName = code => code.replace(/^Key|^Digit/, '').replace('Arrow', '').replace('ShiftLeft', 'Shift').replace('ControlLeft', 'Ctrl');
 function setKeysHint() {
@@ -2129,26 +2170,47 @@ function drawBinds() {
 }
 // One button per rival robot: click to step through Random and each robot in turn.
 const FUEL_CHOICES = [504, 360, 240, 120];      // 504 is the real field
-function drawPicks(host, row, list, from, n) {
+const robotLabel = t => `${t.num} ${t.name}`;
+function robotSelect(value, withRandom, onPick) {
+  const sel = document.createElement('select');
+  if (withRandom) sel.add(new Option('Random', -1));
+  ROBOTS.forEach((t, i) => sel.add(new Option(robotLabel(t), i)));
+  sel.value = value; sel.onchange = () => onPick(+sel.value);
+  return sel;
+}
+// One dropdown per AI robot: Random, or a robot by name.
+function drawPicks(host, row, list, from, n, label) {
   const el = $(host); el.innerHTML = ''; $(row).style.display = n > from ? '' : 'none';
   for (let k = from; k < n; k++) {
-    const pick = list[k] ?? -1, b = document.createElement('button');
-    b.textContent = pick >= 0 && ROBOTS[pick] ? `${ROBOTS[pick].num} ${ROBOTS[pick].name}` : 'Random'; b.className = pick >= 0 ? 'sel' : '';
-    b.onclick = () => { list[k] = pick + 1 >= ROBOTS.length ? -1 : pick + 1; save('ra.opts', opts); drawFoes(); };
-    el.appendChild(b); el.append(' ');
+    const pick = ROBOTS[list[k]] ? list[k] : -1, slot = document.createElement('div'), name = document.createElement('span');
+    slot.className = 'slot'; name.textContent = `${label} ${k - from + 1}`;
+    slot.append(name, robotSelect(pick, true, v => { list[k] = v; save('ra.opts', opts); drawHints(); }));
+    el.appendChild(slot);
   }
 }
 function drawFoes() {
   if (!Array.isArray(opts.foes)) opts.foes = [];
   if (!Array.isArray(opts.mates)) opts.mates = [];
-  drawPicks('optMates', 'rowMates', opts.mates, 1, opts.size);       // slot 0 on your side is you
-  drawPicks('optFoes', 'rowFoes', opts.foes, 0, opts.red);
+  drawPicks('optMates', 'rowMates', opts.mates, 1, opts.size, 'Teammate');       // slot 0 on your side is you
+  drawPicks('optFoes', 'rowFoes', opts.foes, 0, opts.red, 'Rival');
   $('optSizeN').textContent = opts.size === 1 ? 'Just you' : `${opts.size} robots`;
   $('optRedN').textContent = opts.red === 0 ? 'Nobody' : opts.red === 1 ? '1 robot' : `${opts.red} robots`;
+  $('noFoes').style.display = opts.red ? 'none' : '';
+  drawHints();
+}
+// The short explanations beside the options, which change with what is picked.
+function drawHints() {
+  $('vs').textContent = `${opts.size} v ${opts.red}`;
+  $('hintMode').textContent = opts.mode === 'match' ? 'A full 2:40 match: auto, shifts, endgame and a final score.' : 'No clock and no score to chase. R resets the field.';
+  $('hintSpread').textContent = opts.spread === 'mid' ? `About twice a real field's fuel, all at mid-field. Heavier on slow computers.`
+    : opts.spread ? `About twice a real field's fuel, scattered over the whole floor. Heavier on slow computers.` : '';
+  $('hintSkill').textContent = ['Slow and inaccurate: good for learning.', 'A solid event-level alliance.', 'Fast, accurate and rarely idle.'][opts.skill] || '';
+  $('hintBrick').textContent = opts.brick ? 'Your robot can die mid-match, like the real thing.' : 'Your robot never breaks down.';
 }
 function drawMenu() {
   choice('optMode', ['Timed match', 'Free play'], () => opts.mode === 'match' ? 0 : 1, i => opts.mode = i ? 'free' : 'match');
   for (const [id, key] of [['optSize', 'size'], ['optRed', 'red']]) { $(id).value = opts[key]; $(id).oninput = () => { opts[key] = +$(id).value; save('ra.opts', opts); drawFoes(); }; }
+  $('optMe').replaceWith(Object.assign(robotSelect(opts.robot, false, v => { opts.robot = v; save('ra.opts', opts); }), { id: 'optMe', ariaLabel: 'Your robot' }));
   drawFoes();
   choice('optFuel', FUEL_CHOICES.map(String), () => Math.max(0, FUEL_CHOICES.indexOf(opts.fuel)), i => opts.fuel = FUEL_CHOICES[i]);
   choice('optSpread', ['Standard', `${FUEL} in the middle`, `${FUEL} everywhere`], () => opts.spread === 'mid' ? 1 : opts.spread ? 2 : 0, i => { opts.spread = [false, 'mid', true][i]; $('rowFuel').style.display = i ? 'none' : ''; });
@@ -2157,7 +2219,12 @@ function drawMenu() {
   choice('optBrick', ['On', 'Off'], () => opts.brick ? 0 : 1, i => opts.brick = !i);
   const lines = Object.entries(best).map(([k, v]) => { const [id, n] = k.split('.'); return `${ROBOTS.find(r => r.id === id)?.name || id} ${n.includes('v') ? n : n + 'v' + n}: ${v}`; });
   $('best').textContent = lines.length ? 'Personal bests (fuel you scored) — ' + lines.join(' · ') : '';
+  drawHints();
 }
+$('btnDefaults').onclick = () => {
+  Object.assign(opts, { mode: 'match', size: 1, red: 1, mates: [], foes: [], fuel: 504, spread: false, skill: 1, brick: true });
+  save('ra.opts', opts); drawMenu();
+};
 
 // ---------- robot picker with a spinning preview and a start-position map ----------
 const pv = { renderer: new THREE.WebGLRenderer({ canvas: $('preview'), antialias: true, alpha: true }), scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(40, 2, 0.1, 20), bot: null };
@@ -2221,6 +2288,7 @@ function startPlay() {
 }
 let settingsFrom = 'menu';
 $('btnPick').onclick = () => { state = 'picker'; show('picker'); drawPicker(); };
+$('btnQuick').onclick = () => { [opts.sx, opts.sz] = startSpot(opts.sx, opts.sz, ROBOTS[opts.robot]); startPlay(); };      // straight in, with the robot and start spot already chosen
 $('btnBack').onclick = () => { state = 'menu'; show('menu'); drawMenu(); };
 $('btnStart').onclick = startPlay;
 $('btnSettings').onclick = () => { settingsFrom = 'menu'; show('settings'); drawSettings(); };
