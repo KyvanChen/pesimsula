@@ -2,7 +2,7 @@
 """
 Turns a robot CAD assembly (STEP) into a light, single-pose GLB for the game.
 
-    py -3.12 tools/build_robot_static.py reblitz "12 - Robot 2 Top Level Assembly.step" [--hood HOOD.step]
+    py -3.12 tools/build_robot_static.py reblitz "12 - Robot 2 Top Level Assembly.step" [--hood HOOD.step] [--drop REGEX]
 
 Needs: pip install cascadio trimesh fast-simplification
 
@@ -29,12 +29,17 @@ import numpy as np
 import trimesh
 from trimesh.visual.material import PBRMaterial
 
-DROP = re.compile(r"Screw|Bolt|Washer|Nut\b|Locknut|Rivet|Spacer|Bearing|Insert|Shaft Collar|Origin Cube|^Fuel|"
+DROP = re.compile(r"Screw|Bolt|Washer|Nut\b|Locknut|\bRivet|Spacer|Bearing|Insert|Shaft Collar|Origin Cube|^Fuel|"
                   r"Bumper|Chain_?\d*$|Zip Tie|PEM", re.I)
 CLEAR = re.compile(r"Hopper", re.I)        # sub-assembly whose big thin panels are polycarbonate
 BUDGET = 110_000                           # triangles
 
 hood_src = None
+extra_drop = None                          # --drop REGEX: more part paths to leave out (bumpers with no useful name, say)
+if "--drop" in sys.argv:
+    k = sys.argv.index("--drop")
+    extra_drop = re.compile(sys.argv[k + 1])
+    del sys.argv[k:k + 2]
 if "--hood" in sys.argv:
     k = sys.argv.index("--hood")
     hood_src = sys.argv[k + 1]
@@ -108,7 +113,7 @@ kept = 0
 for p in parts:
     verts = trimesh.transform_points(p["verts"], to_game)
     size = verts.max(0) - verts.min(0)
-    hit = DROP.search(p["path"])
+    hit = DROP.search(p["path"]) or (extra_drop and extra_drop.search(p["path"]))
     fuel = size.min() > 0.14 and size.max() < 0.16 and p["rgba"][0] > 200 and p["rgba"][2] < 80      # a game piece left in the CAD
     if hit or fuel or size.max() < 0.035:
         dropped[hit.group(0).lower() if hit else "fuel" if fuel else "small"] += 1

@@ -292,17 +292,26 @@ const ROBOTS = [
   // Team 2910's Re-Blitz, from their public CAD and 2026 tech binder (tools/build_robot_static.py).
   // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
   { id: 'reblitz', name: 'Re-Blitz', tag: 'Team 2910', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
-    model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55,
+    model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55, top: 0.46,
     hood: { pivot: [-0.283, 0.476], up: 0.96 },      // the shooter hood swings up about the drum axle to fire; raised, it is too tall for a trench
     muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156, intake: 24,        // four-wide shooter that throws out of the back, away from the intake
     // Inside the polycarbonate hopper: four fuel wide, from the shooter tower out over the intake.
     // The floor climbs over the intake, so fuel rolls back toward the shooter.
     hopper: { x: [-0.125, 0.645], z: [-0.311, 0.311], y: 0.14, slope: [0.3, 0.3] },
     bio: 'A wide slap-down intake feeds a 50-fuel hopper and a four-wide shooter that empties it at 30 a second. The hood swings up to shoot: with it down the robot fits under the trench, with it up it cannot be pushed through one. No climber.' },
+  // Furious George, from its CAD (tools/build_robot_static.py). An underhand shooter: fuel runs down a ramp under the
+  // flywheels and is thrown up and out of the back end, two at a time. Frame, hopper and shooter positions are measured;
+  // speed, capacity, rate and accuracy are estimates.
+  { id: 'george', name: 'Furious George', tag: 'Underhand shooter', color: 0x9b6bff, size: 0.86, speed: 4.7, accel: 12, turn: 6.5, cap: 60, rate: 6, acc: 0.93, tall: false, climb: 0, mass: 1.4,
+    model: 'robot_george.glb', fixed: true, frame: [0.686, 0.686], reach: 0.29, shotY: 0.32,
+    muzzle: -0.48, rear: true, lanes: 2, laneGap: 0.16, intake: 20,        // twin shooters low at the back end, just behind the bumper
+    jam: 0.005, top: 0.54,      // jam: instead of bricking, each second one of its two shooters may die for the rest of the match, halving its rate
+    hopper: { x: [-0.13, 0.63], z: [-0.33, 0.33], y: 0.11, slope: [0.34, 0.35] },      // the floor steps up over the intake
+    bio: 'An over-the-bumper intake fills a tall 60-fuel hopper. Twin underhand shooters at the back end scoop fuel under the flywheels and lob it up and out of the rear at 6 a second, so a tall robot standing behind it can block the shot. It never bricks outright, but one shooter can jam and halve its rate. Fits under the trench. No climber.' },
   // A fuel shuttle, from its CAD (tools/build_robot_static.py). No shooter: it fills a tall open bin and
   // pushes the fuel back out through the intake. Frame and bin sizes are measured; the rest are estimates.
   { id: 'shuttler', name: 'Peninsula Pups', tag: 'Fuel shuttle', color: 0xff7a1a, size: 0.88, speed: 4.4, accel: 11, turn: 6, cap: 80, rate: 18, acc: 0.9, tall: true, climb: 0, mass: 1.5,
-    model: 'robot_shuttler.glb', fixed: true, shuttle: true, overflow: true, brick: 0.005,      // brick: its own odds of dying, per second
+    model: 'robot_shuttler.glb', fixed: true, shuttle: true, overflow: true, brick: 0.005, top: 0.66,      // top: how tall it stands for shots to hit, kept just under where spilled fuel leaves the bin      // brick: its own odds of dying, per second
     frame: [0.675, 0.72], reach: 0.22,
     hopper: { x: [-0.33, 0.635], z: [-0.35, 0.35], y: 0.215, wall: 0.749 },
     bio: 'A slap-down intake under a tall open bin that reaches out over the intake. No shooter: it carries fuel and ejects it out of the front. Too tall for the trenches.' },
@@ -1156,7 +1165,9 @@ function makeRobot(type, alliance, slot, human, x, z, label) {
   r.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, 0.21, z));
   // The box reaches below the carpet: on a bump the level box would otherwise ride up over fuel and crush it.
   const hb = hitbox(type, 1);
-  world.createCollider(RAPIER.ColliderDesc.cuboid(hb.back, 0.33, hb.side).setTranslation(0, -0.14, 0).setFriction(0.2).setRestitution(0.05), r.body);
+  // It also stands as tall as the robot does, so a shot that hits another robot bounces off: a tall one blocks a low shooter.
+  const top = type.top || 0.4, low = -0.26;
+  world.createCollider(RAPIER.ColliderDesc.cuboid(hb.back, (top - low) / 2, hb.side).setTranslation(0, (top + low) / 2 - 0.21, 0).setFriction(0.2).setRestitution(0.05), r.body);
   if (type.blocker && type.rig) {     // the level plate is a real obstacle for fuel in flight
     r.blockBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, -20, z));
     world.createCollider(RAPIER.ColliderDesc.cuboid(type.rig.plate.length / 2, 0.02, type.rig.plate.halfWidth).setRestitution(0.3), r.blockBody);
@@ -1286,7 +1297,7 @@ function fire(r, sloppyScale) {
   if (!r.hold.length || underTrench(r.x, r.z) || (r.type.fixed && !r.aligned)) return false;
   if (r.type.hood && !(r.hoodUp >= 0.95)) return false;      // the hood has to be up first
   const plan = shotPlan(r);
-  const lanes = r.type.lanes || 1, lane = (r.stats.shots * 3) % lanes - (lanes - 1) / 2;     // hop between lanes
+  const lanes = r.type.lanes || 1, lane = r.jam ? -r.jam * (lanes - 1) / 2 : (r.stats.shots * 3) % lanes - (lanes - 1) / 2;     // hop between lanes; a jammed shooter leaves one
   const at = r.type.turret ? r.type.turret.at : [r.type.muzzle || 0, 0, lane * (r.type.laneGap || 0)], co = Math.cos(r.th), si = Math.sin(r.th);
   const i = feedBall(r, at[0], at[2]);
   const px = r.x + at[0] * co - at[2] * si, py = r.y + r.lift + (r.type.shotY || (r.type.tall ? 0.95 : 0.66)), pz = r.z + at[0] * si + at[2] * co;
@@ -1561,7 +1572,10 @@ function brick() {                    // the robot dies on the spot; the match c
 }
 function tick() {
   game.second += STEP;
-  if (game.second >= 1) { game.second -= 1; if (opts.brick && !net.role && Math.random() < (game.me.type.brick ?? BRICK_CHANCE)) brick(); }
+  if (game.second >= 1) { game.second -= 1; const me = game.me;
+    if (!opts.brick || net.role) { /* bricking is off */ }
+    else if (me.type.jam) { if (!me.jam && !game.over && Math.random() < me.type.jam) { me.jam = Math.random() < 0.5 ? 1 : -1; toast('A SHOOTER JAMMED — ONE LEFT'); rumble(1, 400); } }
+    else if (Math.random() < (me.type.brick ?? BRICK_CHANCE)) brick(); }
   const dt = STEP, before = phaseIndex();
   if (game.hold > 0) {                  // the pause after AUTO: the clock waits, fuel still in the air counts for AUTO
     game.hold -= dt;
@@ -1599,7 +1613,7 @@ function tick() {
     runIntake(r);
     r.cool -= dt;
     if (r.type.shuttle) { if (ejecting(r) && r.cool <= 0 && !r.climb && eject(r)) r.cool = 1 / r.type.rate; }
-    else if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.player ? 1 : sk.rate));
+    else if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.jam ? 0.5 : 1) * (r.player ? 1 : sk.rate));
     const y = r.y + r.lift + 0.21;
     r.body.setNextKinematicTranslation({ x: r.x, y, z: r.z });
     r.body.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
@@ -1794,7 +1808,7 @@ function drawHud() {
   $('fueltxt').textContent = me.type.overflow ? `Fuel ${me.hold.length}` + (me.hold.length > me.type.cap ? ' — OVERFLOWING' : '')
     : `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : '');
   const plan = shotPlan(me);
-  $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : me.type.shuttle ? (me.hold.length ? `Hold ${keyName(keys.blocker)} to eject fuel` : 'Hopper empty') : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
+  $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : me.jam && me.hold.length && !underTrench(me.x, me.z) ? 'One shooter jammed — half rate' : me.type.shuttle ? (me.hold.length ? `Hold ${keyName(keys.blocker)} to eject fuel` : 'Hopper empty') : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
     : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive(me.alliance) ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
   $('camtxt').textContent = game.bricked ? 'BRICKED · watching from the driver station' : `${CAMS[camMode]} · ${!fieldRelative || camMode === 2 ? 'robot-relative' : 'field-relative'}` + (me.type.blocker ? ` · ${me.block > 0.6 ? 'BLOCKER UP' : me.stow > 0.99 && !me.blockOn ? `intake stowed — ${keyName(keys.intake)} to deploy` : me.stow > 0 ? 'intake stowed' : 'intake out'}` : '');
   let status = '';
