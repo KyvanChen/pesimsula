@@ -1007,7 +1007,7 @@ function buildModelRobot(type, alliance) {
       g.add(hood); g.userData.shotHood = hood;
     }
     const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, fz * 0.8, 8), mat(0x4cd07d, { emissive: 0x0d3a1e }));
-    roller.rotation.x = Math.PI / 2; roller.position.set(fx / 2 + type.reach + 0.02, 0.2, 0); g.add(roller); g.userData.roller = roller;
+    roller.rotation.x = Math.PI / 2; roller.position.set(fx / 2 + type.reach + 0.02, 0.2, 0); g.add(roller); roller.visible = false; g.userData.roller = roller;
     return g;
   }
   const turret = new THREE.Group(), head = new THREE.Group(), blocker = new THREE.Group(), sorted = [];
@@ -1036,7 +1036,7 @@ function buildModelRobot(type, alliance) {
     for (const z of h.z) box(x1 - x0, hy, 0.006, clear, (x0 + x1) / 2, h.y + hy / 2, z, g).castShadow = false;
   }
   const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, fz * 0.8, 8), mat(0x4cd07d, { emissive: 0x0d3a1e }));
-  roller.rotation.x = Math.PI / 2; roller.position.set(0.60, 0.11, 0); head.add(roller); g.userData.roller = roller;
+  roller.rotation.x = Math.PI / 2; roller.position.set(0.60, 0.11, 0); head.add(roller); roller.visible = false; g.userData.roller = roller;
   return g;
 }
 // How far the intake head has moved for a given stow amount (0 = out, 1 = stowed). The four-bar arms
@@ -1066,7 +1066,7 @@ function buildRobotMesh(type, alliance) {
     box(w, h - 0.18, d, new THREE.MeshStandardMaterial({ color: type.color, transparent: true, opacity: 0.5 }), x, 0.18 + (h - 0.18) / 2, z, g);
   // intake roller across the front (+X)
   const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, s * 0.8, 12), mat(0x4cd07d, { emissive: 0x0d3a1e }));
-  roller.rotation.x = Math.PI / 2; roller.position.set(s / 2 + 0.05, 0.1, 0); g.add(roller); g.userData.roller = roller;
+  roller.rotation.x = Math.PI / 2; roller.position.set(s / 2 + 0.05, 0.1, 0); g.add(roller); roller.visible = false; g.userData.roller = roller;
   // shooter
   const shooter = new THREE.Group(); shooter.position.set(-0.05, h, 0); g.add(shooter);
   box(0.2, 0.16, 0.24, accent, 0.02, 0.1, 0, shooter).rotation.z = 0.5;
@@ -1079,6 +1079,7 @@ function buildRobotMesh(type, alliance) {
 // fuel against fuel, and the hopper floor and walls. Positions are kept per fuel, so the host and
 // every client each run their own copy; only who holds what goes over the network.
 const hp = new Float32Array(FUEL * 3), hv = new Float32Array(FUEL * 3), feeding = new Float32Array(FUEL), heldBy = new Uint8Array(FUEL), stillHeld = new Uint8Array(FUEL);
+const RATE_SD = 0.5;                       // shooters do not feed perfectly evenly: fuel a second varies by about this much, shot to shot
 const INTAKE_RATE = 12;                   // fuel a second through the intake, unless the robot sets its own (intake)
 const FEED_T = 0.2, FEED_V = 1.0;        // how long and how fast the rollers push each fuel in
 const PRELOADED = 1e6;                 // marks fuel that starts in the hopper and did not come in through the intake
@@ -1204,6 +1205,15 @@ function hitbox(t, stow = 0, block = 0) {
   const plate = block > 0 && t.rig ? blockerUpAt(t)[0] + t.rig.plate.length / 2 : 0;      // a raised shot blocker reaches out over the front
   return { back, side, front: Math.max(back + (out - back) * (1 - stow), back + (plate - back) * block) };
 }
+// Driving at a trench the robot would fit under if it folded down (or already under one): whatever sticks up comes down by itself.
+function trenchAhead(r) {
+  if (r.type.tall || Math.abs(r.z - MZ) < TRENCH_IN - 0.1) return false;
+  for (const lx of [HUBX, L - HUBX]) {
+    const dx = lx - r.x, gap = Math.abs(dx) - TRENCH_D / 2;
+    if (gap < 0.15 || (gap < 2.4 && dx * r.cmd.vx > 0.3)) return true;
+  }
+  return false;
+}
 const startFront = t => hitbox(t, t.blocker ? 1 : 0).front;      // a robot whose intake stows starts with it up
 const isTall = r => r.type.tall || r.stow > 0.3 || r.hoodUp > 0.3;      // a stowed intake or a raised hood no longer fits under a trench
 function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
@@ -1288,7 +1298,7 @@ function shotPlan(r) {
 }
 function autoAlign(r) {
   r.aligned = false;
-  if (!r.cmd.shoot || !r.hold.length || r.climb) return;
+  if (!r.cmd.shoot || !r.hold.length || r.climb || trenchAhead(r)) return;      // no lining up in or into a trench: there is no room to turn
   const plan = shotPlan(r), err = wrap(Math.atan2(plan.z - r.z, plan.x - r.x) - r.th - (r.type.rear ? Math.PI : 0));
   r.cmd.w = clamp(err * 12, -r.type.turn, r.type.turn);
   r.aligned = Math.abs(err) < 0.035 && Math.abs(r.w) < 1.5;
@@ -1353,23 +1363,39 @@ function route(r, tx, tz) {       // the hub line is only crossed through a bump
   }
   return [tx, tz];
 }
+// Which fuel to go for. Loose fuel is grouped into clumps on a coarse grid, and each clump is worth the fuel the robot
+// could actually carry away from it, divided by the time to get there, pick it up and bring it back. So a big pile across
+// the field can beat a single fuel nearby, and a full robot does not cross the field for one more.
+const CLUMP = 0.6;                         // metres per grid square
 function pickBall(r) {
   const mates = game.robots.filter(o => o !== r && o.alliance === r.alliance && o.ai.target).map(o => o.ai.target);
   const avoid = r.ai.avoid && r.ai.avoid[2] > game.t ? r.ai.avoid : null;
-  let bestCost = 1e9, bestAt = null;
+  const cols = Math.ceil(L / CLUMP), cells = new Map();
   for (let i = 0; i < FUEL; i++) {
     if (!balls[i].on || pos[i * 3 + 1] > 0.3) continue;
     const x = pos[i * 3], z = pos[i * 3 + 2];
     if (r.type.tall && underTrench(x, z)) continue;
     if ((x < TOWER_D + 0.2 || x > L - TOWER_D - 0.2) && Math.abs(z - MZ) < 1.15) continue;
     if (avoid && Math.abs(x - avoid[0]) < 1 && Math.abs(z - avoid[1]) < 1) continue;
-    let cost = Math.abs(x - r.x) + Math.abs(z - r.z);
     if (r.type.shuttle && (x < HUBX + BAND || x > L - HUBX - BAND)) continue;     // a shuttle only works the neutral zone
-    if ((r.x - HUBX) * (x - HUBX) < 0) cost += 3;
-    if ((r.x - (L - HUBX)) * (x - (L - HUBX)) < 0) cost += 3;
-    if (cost >= bestCost) continue;
-    if (mates.some(m => Math.abs(x - m[0]) < 1.2 && Math.abs(z - m[1]) < 1.2)) cost += 6;
-    if (cost < bestCost) { bestCost = cost; bestAt = [x, z]; }
+    const key = Math.floor(z / CLUMP) * cols + Math.floor(x / CLUMP), c = cells.get(key);
+    if (c) { c.n++; c.x += x; c.z += z; } else cells.set(key, { n: 1, x, z });
+  }
+  const free = Math.max(1, (r.type.overflow ? r.type.cap + 3 : r.type.cap) - r.hold.length), speed = r.type.speed * SKILLS[game.skill].speed;
+  const homeX = wallX(r.alliance, LINE - 1), was = r.ai.target;
+  let best = 0, bestAt = null;
+  for (const [key, c] of cells) {
+    let n = 0;                                                                     // fuel here and in the squares around it
+    for (const dk of [0, 1, -1, cols, -cols, cols + 1, cols - 1, -cols + 1, -cols - 1]) n += cells.get(key + dk)?.n || 0;
+    const x = c.x / c.n, z = c.z / c.n, take = Math.min(n, free);
+    let dist = Math.abs(x - r.x) + Math.abs(z - r.z);
+    if ((r.x - HUBX) * (x - HUBX) < 0) dist += 3;                                  // each hub line crossed is a detour through a lane
+    if ((r.x - (L - HUBX)) * (x - (L - HUBX)) < 0) dist += 3;
+    if (!r.type.shuttle) dist += 0.35 * Math.abs(x - homeX);                       // and the load still has to come home
+    let value = take / (dist / speed + 0.6 + take / (r.type.intake || INTAKE_RATE));
+    if (mates.some(m => Math.abs(x - m[0]) < 1.2 && Math.abs(z - m[1]) < 1.2)) value *= 0.4;      // a partner is already on it
+    if (was && Math.abs(x - was[0]) < CLUMP && Math.abs(z - was[1]) < CLUMP) value *= 1.25;        // do not dither between two piles
+    if (value > best) { best = value; bestAt = [x, z]; }
   }
   return bestAt;
 }
@@ -1613,7 +1639,7 @@ function tick() {
     runIntake(r);
     r.cool -= dt;
     if (r.type.shuttle) { if (ejecting(r) && r.cool <= 0 && !r.climb && eject(r)) r.cool = 1 / r.type.rate; }
-    else if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / (r.type.rate * (r.jam ? 0.5 : 1) * (r.player ? 1 : sk.rate));
+    else if (r.cmd.shoot && r.cool <= 0 && !r.climb && fire(r, r.player ? 1 : 1 / sk.acc)) r.cool = 1 / Math.max(0.5, r.type.rate * (r.jam ? 0.5 : 1) * (r.player ? 1 : sk.rate) + gauss() * RATE_SD);
     const y = r.y + r.lift + 0.21;
     r.body.setNextKinematicTranslation({ x: r.x, y, z: r.z });
     r.body.setNextKinematicRotation({ x: 0, y: Math.sin(-r.th / 2), z: 0, w: Math.cos(-r.th / 2) });
@@ -1624,8 +1650,8 @@ function tick() {
     if (r.type.hood) {
       // The hood comes up to shoot and drops again shortly after. It cannot come up under a trench, and once it is up
       // the robot no longer fits under one, so a robot shooting beside a trench cannot be shoved through it.
-      const want = r.cmd.shoot && r.hold.length > 0 && !r.climb && !(game.hold > 0);
-      r.hoodWait = want ? 0.4 : Math.max(0, (r.hoodWait || 0) - dt);
+      const fold = trenchAhead(r), want = r.cmd.shoot && r.hold.length > 0 && !r.climb && !(game.hold > 0) && !fold;
+      r.hoodWait = want ? 0.4 : fold ? 0 : Math.max(0, (r.hoodWait || 0) - dt);
       const roof = OBSTACLES.some(o => o.kind === 'overhead' && overlap(r, o));
       const up = r.hoodWait > 0 && (!roof || r.hoodUp > 0.3);
       r.hoodUp = clamp((r.hoodUp || 0) + (up ? dt : -dt) / 0.25, 0, 1);
@@ -1633,9 +1659,10 @@ function tick() {
     if (r.blockBody) {
       // Sequence: intake swings up, then the blocker deploys; lowering runs it backwards.
       // The starting stow ends when the driver runs the intake or raises the blocker; AI drivers drop it as soon as they may move.
-      if (r.startStow && (r.cmd.intake || r.blockOn || (!r.player && !(game.hold > 0)))) r.startStow = false;
+      const fold = trenchAhead(r), blockOn = r.blockOn && !fold;      // heading under a trench: blocker down and intake out, until it is clear again
+      if (r.startStow && (r.cmd.intake || r.blockOn || fold || (!r.player && !(game.hold > 0)))) r.startStow = false;
       if (r.startStow && !r.climb) { r.stow = Math.min(1, r.stow + dt / 0.5); r.block = Math.max(0, r.block - dt / 0.3); }
-      else if (r.blockOn && !r.climb) { r.stow = Math.min(1, r.stow + dt / 0.5); if (r.stow >= 1) r.block = Math.min(1, r.block + dt / 0.3); }
+      else if (blockOn && !r.climb) { r.stow = Math.min(1, r.stow + dt / 0.5); if (r.stow >= 1) r.block = Math.min(1, r.block + dt / 0.3); }
       else { r.block = Math.max(0, r.block - dt / 0.3); if (r.block <= 0) r.stow = Math.max(0, r.stow - dt / 0.5); }
       const up = r.block > 0.6;
       if (up !== r.blockBody.isEnabled()) r.blockBody.setEnabled(up);
@@ -1759,7 +1786,6 @@ function render() {
       u.swings.forEach((p, i) => { p.rotation.z = rig.swings[i].swing * r.stow; });   // arms swing on their pivots
       u.head.position.set(sx, sy, 0);                                                 // head stays level
       u.blocker.rotation.z = rig.plate.swing * (1 - r.block);                         // hanging down -> level
-      u.roller.visible = r.stow < 0.1;
     }
     if (u.shotHood) { const k = r.hoodUp || 0; u.shotHood.rotation.z = r.type.hood.up * k * k * (3 - 2 * k); }
     r.mesh.userData.roller.material.emissiveIntensity = r.cmd.intake ? 2.5 : 0.2;
