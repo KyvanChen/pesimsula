@@ -14,7 +14,7 @@ python -m http.server 5173
 
 Then open http://localhost:5173. Opening `index.html` directly from disk does not work, because the browser blocks the model files.
 
-The menu sets the match up: timed or free play, how many robots are on each side (one to six on yours, none to six against you, set separately), which robots your teammates and the other alliance drive (or left to chance), how much fuel is on the field and whether it starts in the usual places or scattered over the whole floor, and how good the AI drivers are.
+The menu sets the match up: timed or free play, how many robots are on each side (one to six on yours, none to six against you, set separately), which robots your teammates and the other alliance drive (or left to chance), how much fuel is on the field and whether it starts in the usual places or, with about twice as much (1000), scattered over the whole floor, and how good the AI drivers are.
 
 ## Controls
 

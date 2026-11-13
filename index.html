@@ -155,7 +155,7 @@
     <div class="row" id="rowMates"><label>Teammates</label><span id="optMates"></span></div>
     <div class="row"><label>Opponents</label><input type="range" id="optRed" min="0" max="6" step="1"><b id="optRedN"></b></div>
     <div class="row" id="rowFoes"><label>Rival robots</label><span id="optFoes"></span></div>
-    <div class="row"><label>Fuel on field</label><span id="optFuel"></span></div>
+    <div class="row" id="rowFuel"><label>Fuel on field</label><span id="optFuel"></span></div>
     <div class="row"><label>Fuel layout</label><span id="optSpread"></span></div>
     <div class="row"><label>AI skill</label><span id="optSkill"></span></div>
     <div class="row"><label>Random bricking</label><span id="optBrick"></span></div>
@@ -270,7 +270,7 @@ const TOWER_D = 45 * IN, UP_GAP = 32.25 * IN, UP_W = 3.5 * IN, RUNGS = [27 * IN,
 const TOWER_Z = 0.289, TOWER_UPX = 1.06;        // the tower is off-centre along the wall
 const DEPOT_W = 42 * IN, DEPOT_D = 27 * IN, DEPOT_OFF = -1.93, CHUTE_Z = MZ + 3.37;
 const towerZ = alliance => alliance === 'blue' ? MZ + TOWER_Z : MZ - TOWER_Z;
-const BALL_R = 5.91 * IN / 2, FUEL = 504, PRELOAD = 8;
+const BALL_R = 5.91 * IN / 2, FUEL = 1000, PRELOAD = 8;      // the pool: a real field has 504, the rest is for the "Everywhere" layout
 const STEP = 1 / 60, G = 9.81;
 const ROLL_DAMP = 0.6;                      // how quickly loose fuel loses speed
 const MAX_ROLL = 5.5, MAX_HOP = 0.9;         // fastest a ball on the carpet may be shoved, and how hard it may pop up
@@ -998,7 +998,7 @@ function stageFuel() {
   heldBy.fill(0);
   const sp = BALL_R * 2 + 0.008;
   // The menu sets how much fuel is in play. Preloads come first; each depot and outpost gets its usual 24 when there is enough to go round.
-  const total = clamp(opts.fuel || FUEL, next, FUEL), stash = clamp(Math.floor((total - next) * 0.19), 0, 24);
+  const total = opts.spread ? FUEL : clamp(opts.fuel || 504, next, 504), stash = clamp(Math.floor((total - next) * 0.19), 0, 24);
   for (const a of ['blue', 'red']) {
     for (let k = 0; k < stash; k++) {                                   // in the depot
       const i = Math.floor(k / 6), j = k % 6, [x, z] = mirror(a, 0.1 + i * sp, MZ + DEPOT_OFF + (j - 2.5) * sp); putBall(next++, x, BALL_R, z);
@@ -2103,7 +2103,8 @@ function drawMenu() {
   for (const [id, key] of [['optSize', 'size'], ['optRed', 'red']]) { $(id).value = opts[key]; $(id).oninput = () => { opts[key] = +$(id).value; save('ra.opts', opts); drawFoes(); }; }
   drawFoes();
   choice('optFuel', FUEL_CHOICES.map(String), () => Math.max(0, FUEL_CHOICES.indexOf(opts.fuel)), i => opts.fuel = FUEL_CHOICES[i]);
-  choice('optSpread', ['Standard', 'Everywhere'], () => opts.spread ? 1 : 0, i => opts.spread = !!i);
+  choice('optSpread', ['Standard', `Everywhere (${FUEL} fuel)`], () => opts.spread ? 1 : 0, i => { opts.spread = !!i; $('rowFuel').style.display = i ? 'none' : ''; });
+  $('rowFuel').style.display = opts.spread ? 'none' : '';
   choice('optSkill', SKILLS.map(s => s.name), () => opts.skill, i => opts.skill = i);
   choice('optBrick', ['On', 'Off'], () => opts.brick ? 0 : 1, i => opts.brick = !i);
   const lines = Object.entries(best).map(([k, v]) => { const [id, n] = k.split('.'); return `${ROBOTS.find(r => r.id === id)?.name || id} ${n.includes('v') ? n : n + 'v' + n}: ${v}`; });
