@@ -3,6 +3,7 @@
 Turns a robot CAD assembly (STEP) into a light, single-pose GLB for the game.
 
     py -3.12 tools/build_robot_static.py reblitz "12 - Robot 2 Top Level Assembly.step" [--hood HOOD.step] [--drop REGEX]
+                                         [--front-x CX,CY] [--clear REGEX]
 
 Needs: pip install cascadio trimesh fast-simplification
 
@@ -13,6 +14,9 @@ draws its own in the alliance colour. Clear hopper panels are kept see-through.
 
 --hood names a second STEP holding just the shooter hood, exported in place. Those parts become
 hood_* nodes so the game can tilt them, and the hinge (the axle the hood turns on) is printed.
+
+--front-x CX,CY is for CAD that is not centred and has its intake towards +X instead: CX,CY is the middle of
+the chassis in CAD metres. --clear REGEX names more parts to draw see-through (hopper panels with no useful name).
 
 Output axes match the game's robots: +X is the front (intake side), Y is up,
 the chassis is centred on the origin and sits on the floor.
@@ -39,6 +43,16 @@ extra_drop = None                          # --drop REGEX: more part paths to le
 if "--drop" in sys.argv:
     k = sys.argv.index("--drop")
     extra_drop = re.compile(sys.argv[k + 1])
+    del sys.argv[k:k + 2]
+front_x = None
+if "--front-x" in sys.argv:
+    k = sys.argv.index("--front-x")
+    front_x = [float(v) for v in sys.argv[k + 1].split(",")]
+    del sys.argv[k:k + 2]
+extra_clear = None
+if "--clear" in sys.argv:
+    k = sys.argv.index("--clear")
+    extra_clear = re.compile(sys.argv[k + 1])
     del sys.argv[k:k + 2]
 if "--hood" in sys.argv:
     k = sys.argv.index("--hood")
@@ -106,6 +120,8 @@ for node in graph.nodes_geometry:
 floor = min(p["verts"][:, 2].min() for p in parts if not re.search("Origin Cube", p["path"]))
 # CAD -Y (intake side) -> game +X; CAD Z -> game Y (up); CAD X -> game Z.
 to_game = np.array([[0, -1, 0, 0], [0, 0, 1, -floor], [1, 0, 0, 0], [0, 0, 0, 1]], dtype=float)
+if front_x:                                # CAD +X (intake side) -> game +X; CAD Z -> game Y; CAD Y -> game -Z
+    to_game = np.array([[1, 0, 0, -front_x[0]], [0, 0, 1, -floor], [0, -1, 0, front_x[1]], [0, 0, 0, 1]], dtype=float)
 
 groups = collections.defaultdict(list)
 dropped = collections.Counter()
@@ -118,7 +134,7 @@ for p in parts:
     if hit or fuel or size.max() < 0.035:
         dropped[hit.group(0).lower() if hit else "fuel" if fuel else "small"] += 1
         continue
-    clear = bool(CLEAR.search(p["path"])) and size.min() < 0.01 and np.sort(size)[1] > 0.12 or p["rgba"][3] < 250
+    clear = bool(CLEAR.search(p["path"])) and size.min() < 0.01 and np.sort(size)[1] > 0.12 or p["rgba"][3] < 250 or bool(extra_clear and extra_clear.search(p["path"]))
     groups[(p["hood"], clear, p["rgba"][:3])].append((verts, p["faces"]))
     kept += len(p["faces"])
 

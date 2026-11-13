@@ -14,7 +14,7 @@ python -m http.server 5173
 
 Then open http://localhost:5173. Opening `index.html` directly from disk does not work, because the browser blocks the model files.
 
-The menu sets the match up: timed or free play, how many robots are on each side (one to six on yours, none to six against you, set separately), which robots your teammates and the other alliance drive (or left to chance), how much fuel is on the field and whether it starts in the usual places or, with about twice as much (1000), scattered over the whole floor, and how good the AI drivers are.
+The menu sets the match up: timed or free play, how many robots are on each side (one to six on yours, none to six against you, set separately), which robots your teammates and the other alliance drive (or left to chance), how much fuel is on the field and whether it starts in the usual places or, with about twice as much (1000), all at mid-field or scattered over the whole floor, and how good the AI drivers are.
 
 ## Controls
 
@@ -47,12 +47,13 @@ The host's browser runs the whole match, so it ends for everyone if the host lea
 - `robot_calgames.glb`, `robot_calgames.json` — the Elite Ball Knowledge robot and its measured linkage (turret, tilting shooter hood, four-bar intake, shot blocker).
 - `robot_reblitz.glb` — Re-Blitz, simplified from Team 2910's public CAD release, with stats from their 2026 tech binder.
 - `robot_george.glb` — Furious George, an underhand shooter that lobs fuel out of its back end, simplified from its CAD.
+- `robot_team8.glb` — Team 8's hooded dumper, simplified from its CAD.
 - `robot_shuttler.glb` — Peninsula Pups, a tall fuel shuttle with no shooter, simplified from its CAD.
 - `tools/build_field.py`, `tools/build_robot.py`, `tools/build_robot_static.py` — rebuild the models from STEP files. They need Python with `cascadio`, `trimesh` and `fast-simplification`.
 
 ## Notes
 
-Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose pile that shifts as the robot drives; the Elite Ball Knowledge and Peninsula Pups hoppers are open, so anything piled above their walls rolls back onto the field, while Re-Blitz stops at 50. Re-Blitz raises its shooter hood to fire; while the hood is up the robot is too tall for a trench, so it cannot be pushed under one. A human player stands at each outpost with the 24 fuel staged there and throws it at their hub while it is active, making about 70% of the throws. AI drivers play each robot its own way: Elite Ball Knowledge scores while it keeps collecting, Re-Blitz fills up and parks in front of the hub to unload, and Peninsula Pups ferries fuel from the neutral zone to its shooters (at most one per alliance, never alone). With their own hub off, an AI driver will sometimes go and defend a Re-Blitz or a Furious George that is unloading: it stands between a Furious George and the hub to knock down its low shots, and leans on a Re-Blitz, whose shots go over any robot. It is deliberately not very good at it. Every robot wears its team number on its bumpers. Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
+Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose pile that shifts as the robot drives; the Elite Ball Knowledge and Peninsula Pups hoppers are open, so anything piled above their walls rolls back onto the field, while Re-Blitz stops at 50. Re-Blitz raises its shooter hood to fire; while the hood is up the robot is too tall for a trench, so it cannot be pushed under one. A human player stands at each outpost with the 24 fuel staged there and throws it at their hub while it is active, making about 70% of the throws. AI drivers play each robot its own way: Elite Ball Knowledge scores while it keeps collecting, Re-Blitz fills up and parks in front of the hub to unload, and Peninsula Pups ferries fuel from the neutral zone to its shooters (at most one per alliance, never alone). With their own hub off, an AI driver will sometimes go and defend a Re-Blitz, a Furious George or a Team 8 robot that is unloading: it stands between a Furious George and the hub to knock down its low shots, and leans on the two hooded robots, whose shots go over any robot. It is deliberately not very good at it. Every robot wears its team number on its bumpers. Only Elite Ball Knowledge's turret corrects for the robot's own motion, and even it loses a little accuracy flat out; every other shooter is far less accurate while it is moving. Collisions use simple shapes, not the CAD mesh. Collisions and scoring are decided on the host in multiplayer.
 
 ## Credits
 

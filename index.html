@@ -294,7 +294,7 @@ const COL = { blue: 0x3d86ff, red: 0xff3d5a };
 const ROBOTS = [
   // Built from the team's own CAD (tools/build_robot.py). Stats are estimates, not measured.
   { id: 'calgames', num: 6036, name: 'Elite Ball Knowledge', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
-    model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true, overflow: true, intake: 20,
+    model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, front: 0.655, stowFront: 0.495, shotY: 0.62, sotm: true, blocker: true, overflow: true, intake: 20,
     // Fuel sits low at the front, over the rollers and out into the intake; it shuffles back when the intake stows.
     // There is no hard limit: past about 30 the pile is higher than the walls (wall) and fuel rolls off.
     hopper: { x: [0.0, 0.62], z: [-0.31, 0.31], y: 0.19, wall: 0.47, walls: [-0.02, 0.36], stowBack: 0.25 },
@@ -302,7 +302,7 @@ const ROBOTS = [
   // Team 2910's Re-Blitz, from their public CAD and 2026 tech binder (tools/build_robot_static.py).
   // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
   { id: 'reblitz', num: 2910, blockable: true, name: 'Re-Blitz', tag: 'Jack in the Bot', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
-    model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55, top: 0.46,
+    model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, front: 0.648, shotY: 0.55, top: 0.46,
     hood: { pivot: [-0.283, 0.476], up: 0.96, span: [-0.36, -0.04] },      // span: the part of the robot, front to back, that the raised hood stands over      // the shooter hood swings up about the drum axle to fire; raised, it is too tall for a trench
     muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156, intake: 24,        // four-wide shooter that throws out of the back, away from the intake
     // Inside the polycarbonate hopper: four fuel wide, from the shooter tower out over the intake.
@@ -313,7 +313,7 @@ const ROBOTS = [
   // flywheels and is thrown up and out of the back end, two at a time. Frame, hopper and shooter positions are measured;
   // speed, capacity, rate and accuracy are estimates.
   { id: 'george', num: 840, blockable: true, name: 'Furious George', tag: 'Underhand shooter', color: 0x9b6bff, size: 0.86, speed: 4.7, accel: 12, turn: 6.5, cap: 60, rate: 6, acc: 0.93, tall: false, climb: 0, mass: 1.4,
-    model: 'robot_george.glb', fixed: true, frame: [0.686, 0.686], reach: 0.29, shotY: 0.32,
+    model: 'robot_george.glb', fixed: true, frame: [0.686, 0.686], reach: 0.29, front: 0.648, shotY: 0.32,
     muzzle: -0.48, rear: true, lanes: 2, laneGap: 0.16, intake: 20,        // twin shooters low at the back end, just behind the bumper
     jam: 0.005, top: 0.54,      // jam: instead of bricking, each second one of its two shooters may die for the rest of the match, halving its rate
     hopper: { x: [-0.13, 0.63], z: [-0.33, 0.33], y: 0.11, slope: [0.34, 0.35] },      // the floor steps up over the intake
@@ -322,9 +322,17 @@ const ROBOTS = [
   // pushes the fuel back out through the intake. Frame and bin sizes are measured; the rest are estimates.
   { id: 'shuttler', num: 6248, name: 'Peninsula Pups', tag: 'Fuel shuttle', color: 0xff7a1a, size: 0.88, speed: 4.4, accel: 11, turn: 6, cap: 80, rate: 18, acc: 0.9, tall: true, climb: 0, mass: 1.5,
     model: 'robot_shuttler.glb', fixed: true, shuttle: true, overflow: true, brick: 0.005, top: 0.66,      // top: how tall it stands for shots to hit, kept just under where spilled fuel leaves the bin      // brick: its own odds of dying, per second
-    frame: [0.675, 0.72], reach: 0.22,
+    frame: [0.675, 0.72], reach: 0.22, front: 0.646,
     hopper: { x: [-0.33, 0.635], z: [-0.35, 0.35], y: 0.215, wall: 0.749 },
     bio: 'A slap-down intake under a tall open bin that reaches out over the intake. No shooter: it carries fuel and ejects it out of the front. Too tall for the trenches.' },
+  // Team 8's dumper, from its CAD (tools/build_robot_static.py --front-x). Frame, hopper and hood are measured; the fire rate
+  // is the team's figure; speed, capacity and accuracy are estimates, and so is which way it throws (out of the back, like Re-Blitz).
+  { id: 'team8', num: 8, blockable: true, name: 'Paly Robotics', tag: 'Hooded dumper', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 45, rate: 20, acc: 0.93, tall: false, climb: 0, mass: 1.4,
+    model: 'robot_team8.glb', fixed: true, frame: [0.673, 0.673], reach: 0.29, front: 0.635, shotY: 0.5, top: 0.55,
+    hood: { pivot: [-0.1125, 0.345], up: -0.6, span: [-0.36, -0.02] },      // hinged on the cross shaft in front of it, so the roller end at the back lifts to fire; raised, it is too tall for a trench
+    muzzle: -0.26, rear: true, lanes: 4, laneGap: 0.15, intake: 22,
+    hopper: { x: [0.0, 0.62], z: [-0.35, 0.35], y: 0.2 },                  // the box over the roller floor, reaching out over the intake
+    bio: 'A full-width intake feeds a boxy 45-fuel hopper on a roller floor, and a four-wide shooter at the back empties it at 20 a second. The hood lifts to shoot: down, the robot just fits under the trench; up, it cannot be pushed through one. No climber.' },
 ];
 // An AI robot for an alliance that already has these robots. A shuttle only helps next to a shooter, so at most one, and never alone.
 const aiRobot = mates => {
@@ -1007,7 +1015,7 @@ function stageFuel() {
     game.hp[a] = { stock: [], cool: 1 + Math.random(), swing: 0 };
     for (let k = 0; k < stash; k++) game.hp[a].stock.push(next++);    // in the outpost, with the human player
   }
-  if (opts.spread) {                 // "Everywhere": the mid-field fuel is scattered over the whole floor instead, clear of robots and field elements
+  if (opts.spread === true) {        // "Everywhere": the mid-field fuel is scattered over the whole floor instead, clear of robots and field elements
     const n = total - next, g = Math.sqrt(L * W / Math.max(1, n)) * 0.9, spots = [];
     const blocked = (x, z) => OBSTACLES.some(o => o.kind === 'solid' && Math.abs(x - o.x) < o.hx + 0.12 && Math.abs(z - o.z) < o.hz + 0.12) ||
       game.robots.some(r => Math.hypot(r.x - x, r.z - z) < r.radius + 0.15) ||
@@ -1284,9 +1292,10 @@ function moveRobot(r, dt) {
 // whatever sticks out furthest (the intake or the bin). A stowed intake no longer sticks out.
 function hitbox(t, stow = 0, block = 0) {
   const [fx, fz] = t.frame || [t.size - 0.08, t.size - 0.08], back = fx / 2 + 0.04, side = fz / 2 + 0.04;
-  const out = Math.max(fx / 2 + (t.reach || 0.16) + 0.03, (t.hopper?.x[1] ?? 0) + 0.01, back);
+  // "front" is measured off the model with the intake out; "stowFront" is how far it still sticks out folded up.
+  const out = Math.max(t.front ?? fx / 2 + (t.reach || 0.16) + 0.03, (t.hopper?.x[1] ?? 0) + 0.01, back), up = t.stowFront ?? back;
   const plate = block > 0 && t.rig ? blockerUpAt(t)[0] + t.rig.plate.length / 2 : 0;      // a raised shot blocker reaches out over the front
-  return { back, side, front: Math.max(back + (out - back) * (1 - stow), back + (plate - back) * block) };
+  return { back, side, front: Math.max(up + (out - up) * (1 - stow), back + (plate - back) * block) };
 }
 // Driving at a trench the robot would fit under if it folded down (or already under one): whatever sticks up comes down by itself.
 function trenchAhead(r) {
@@ -1334,15 +1343,48 @@ function collideField(r) {
   }
   if (OBSTACLES.some(o => (o.kind === 'solid' || isTall(r)) && overlap(r, o))) { r.x = r.px; r.z = r.pz; r.th = r.pth; r.vx = r.vz = r.w = 0; }
 }
+// Robot against robot: each is its real rectangle, intake included, so an intake cannot poke into another robot.
+// Returns how deep they overlap and the direction from a to b to push them apart along, or null.
+function overlapRobots(a, b) {
+  const ha = hitbox(a.type, a.stow, a.block), hb = hitbox(b.type, b.stow, b.block);
+  const ca = Math.cos(a.th), sa = Math.sin(a.th), cb = Math.cos(b.th), sb = Math.sin(b.th);
+  const ea = (ha.front + ha.back) / 2, oa = (ha.front - ha.back) / 2, eb = (hb.front + hb.back) / 2, ob = (hb.front - hb.back) / 2;
+  const dx = b.x + ob * cb - a.x - oa * ca, dz = b.z + ob * sb - a.z - oa * sa;      // between the two boxes' centres
+  let best = Infinity, nx = 0, nz = 0;
+  for (const [ax, az] of [[ca, sa], [-sa, ca], [cb, sb], [-sb, cb]]) {
+    const ra = ea * Math.abs(ax * ca + az * sa) + ha.side * Math.abs(-ax * sa + az * ca);
+    const rb = eb * Math.abs(ax * cb + az * sb) + hb.side * Math.abs(-ax * sb + az * cb);
+    const gap = dx * ax + dz * az, pen = ra + rb - Math.abs(gap);
+    if (pen <= 1e-6) return null;
+    if (pen < best) { best = pen; const sg = gap >= 0 ? 1 : -1; nx = ax * sg; nz = az * sg; }
+  }
+  return [best, nx, nz];
+}
 function collideRobots() {
   const rs = game.robots;
-  for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
-    const a = rs[i], b = rs[j], dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz), reach = a.radius + b.radius;
-    if (d >= reach || d < 1e-6 || (a.climb && b.climb)) continue;
-    const nx = dx / d, nz = dz / d, gap = reach - d;
+  for (let pass = 0; pass < 2; pass++) for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+    const a = rs[i], b = rs[j];
+    if ((a.climb && b.climb) || Math.hypot(b.x - a.x, b.z - a.z) > 1.6) continue;
+    const hit = overlapRobots(a, b); if (!hit) continue;
+    const [gap, nx, nz] = hit;
     const sa = a.climb ? 0 : b.climb ? 1 : b.type.mass / (a.type.mass + b.type.mass);
     a.x -= nx * gap * sa; a.z -= nz * gap * sa; b.x += nx * gap * (1 - sa); b.z += nz * gap * (1 - sa);
-    if (a.alliance !== b.alliance) { pinCheck(a, b, nx, nz); pinCheck(b, a, -nx, -nz); }
+    // neither keeps driving into the other
+    const va = a.vx * nx + a.vz * nz, vb = b.vx * nx + b.vz * nz;
+    if (va > vb) { const m = va * (1 - sa) + vb * sa; a.vx += (m - va) * nx; a.vz += (m - va) * nz; b.vx += (m - vb) * nx; b.vz += (m - vb) * nz; }
+    if (!pass && a.alliance !== b.alliance) { pinCheck(a, b, nx, nz); pinCheck(b, a, -nx, -nz); }
+  }
+}
+// A robot held by a wall or a field element cannot give way, so whoever is pushing it is the one that backs out.
+function settleRobots() {
+  const rs = game.robots;
+  for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+    const a = rs[i], b = rs[j], fa = a.contact || a.climb > 0, fb = b.contact || b.climb > 0;
+    if (fa === fb || Math.hypot(b.x - a.x, b.z - a.z) > 1.6) continue;
+    const hit = overlapRobots(a, b); if (!hit) continue;
+    const [gap, nx, nz] = hit, m = fa ? b : a, sg = fa ? 1 : -1;
+    m.x += nx * gap * sg; m.z += nz * gap * sg;
+    const vn = (m.vx * nx + m.vz * nz) * sg; if (vn < 0) { m.vx -= vn * sg * nx; m.vz -= vn * sg * nz; }
   }
 }
 function pinCheck(p, v, nx, nz) {      // p shoving v into a wall or field element for 3 s is a foul
@@ -1403,11 +1445,15 @@ function fire(r, sloppyScale) {
   let th = (plan.mode === 'pass' ? 45 : d < 1.6 ? 78 : d < 3 ? 68 : 60) * Math.PI / 180;
   while (d * Math.tan(th) <= dh + 0.15 && th < 1.5) th += 0.06;
   const sloppy = (1 - r.type.acc) * sloppyScale;
-  const v = Math.sqrt(G * d * d / (2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dh))) * (1 + gauss() * sloppy * 0.3);
+  // Shooting while driving. Without a turret nothing corrects for the robot's own motion: the shot carries most of it and
+  // scatters more the faster it goes. A turret corrects for it, but flat out it starts to fall a little behind.
+  const pace = Math.hypot(r.vx, r.vz), flatOut = Math.max(0, pace / r.type.speed - 0.6) / 0.4;
+  const shake = r.type.sotm ? flatOut * 0.01 : Math.min(pace, 5) * 0.035;
+  const v = Math.sqrt(G * d * d / (2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dh))) * (1 + gauss() * (sloppy * 0.3 + shake * 0.6));
   // A fixed shooter can only throw straight ahead: the robot has to be lined up first.
-  const yaw = (r.type.fixed ? r.th + (r.type.rear ? Math.PI : 0) : Math.atan2(dz, dx)) + gauss() * sloppy * 0.45, vh = v * Math.cos(th);
+  const yaw = (r.type.fixed ? r.th + (r.type.rear ? Math.PI : 0) : Math.atan2(dz, dx)) + gauss() * (sloppy * 0.45 + shake), vh = v * Math.cos(th);
   // A good shooter cancels its own motion; a sloppy one lets the shot drift
-  const drift = r.type.sotm ? 0 : sloppy * 3;        // shoot-on-the-move turrets cancel the robot's motion
+  const drift = r.type.sotm ? flatOut * 0.05 : 0.8;
   putBall(i, px, py, pz, Math.cos(yaw) * vh + r.vx * drift, v * Math.sin(th), Math.sin(yaw) * vh + r.vz * drift);
   balls[i].shooter = r; balls[i].flying = true; balls[i].body.setLinearDamping(0); r.stats.shots++; r.shotAt = game.t;
   if (plan.mode === 'pass') r.stats.passes++;
@@ -1533,7 +1579,7 @@ function think(r, dt) {
     const d = a.def, o = d.o, h = HUBS[o.alliance];
     if (game.t >= d.next) {              // it only looks every so often, and misjudges the spot a little, so a shooter that shifts gets shots away
       d.next = game.t + 0.5 + sk.replan * 1.5;
-      const [px, pz] = blockPoint(o), hd = Math.hypot(h.x - px, h.z - pz) || 1, gap = r.radius + o.radius + (o.type.rear ? 0.08 : -0.35), slop = 0.45 * (1 - sk.acc * 0.6);
+      const [px, pz] = blockPoint(o), hd = Math.hypot(h.x - px, h.z - pz) || 1, gap = r.radius + o.radius + (o.type.hood ? -0.35 : 0.08), slop = 0.45 * (1 - sk.acc * 0.6);
       d.at = [px + (h.x - px) / hd * gap + (Math.random() - 0.5) * slop, pz + (h.z - pz) / hd * gap + (Math.random() - 0.5) * slop];
     }
     goal = d.at; c.intake = false;
@@ -1825,6 +1871,8 @@ function tick() {
     moveRobot(r, dt);
   }
   collideRobots();
+  for (const r of game.robots) if (!r.climb) collideField(r);
+  settleRobots();
   for (const r of game.robots) {
     if (!r.climb) collideField(r);
     // three seconds of pinning is a foul: points to the other alliance
@@ -2103,7 +2151,7 @@ function drawMenu() {
   for (const [id, key] of [['optSize', 'size'], ['optRed', 'red']]) { $(id).value = opts[key]; $(id).oninput = () => { opts[key] = +$(id).value; save('ra.opts', opts); drawFoes(); }; }
   drawFoes();
   choice('optFuel', FUEL_CHOICES.map(String), () => Math.max(0, FUEL_CHOICES.indexOf(opts.fuel)), i => opts.fuel = FUEL_CHOICES[i]);
-  choice('optSpread', ['Standard', `Everywhere (${FUEL} fuel)`], () => opts.spread ? 1 : 0, i => { opts.spread = !!i; $('rowFuel').style.display = i ? 'none' : ''; });
+  choice('optSpread', ['Standard', `${FUEL} in the middle`, `${FUEL} everywhere`], () => opts.spread === 'mid' ? 1 : opts.spread ? 2 : 0, i => { opts.spread = [false, 'mid', true][i]; $('rowFuel').style.display = i ? 'none' : ''; });
   $('rowFuel').style.display = opts.spread ? 'none' : '';
   choice('optSkill', SKILLS.map(s => s.name), () => opts.skill, i => opts.skill = i);
   choice('optBrick', ['On', 'Off'], () => opts.brick ? 0 : 1, i => opts.brick = !i);
@@ -2220,7 +2268,7 @@ try {
 
 buildField(); loadFieldModel(); buildBalls(); applyQuality(); drawMenu(); show('menu');
 $('loading').remove();
-window.__game = { game, tick, opts, startPlay, summary, balls, brick, net, state: () => state, renderer, camera, scene, render, proc };   // for testing from the console
+window.__game = { hitbox, overlapRobots, game, tick, opts, startPlay, summary, balls, brick, net, state: () => state, renderer, camera, scene, render, proc };   // for testing from the console
 requestAnimationFrame(frame);
 </script>
 </body>
