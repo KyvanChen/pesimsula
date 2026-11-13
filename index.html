@@ -256,6 +256,9 @@ const TRENCH_D = 47 * IN, TRENCH_CLEAR = 22.25 * IN, TRENCH_H = 40.25 * IN;
 const HUBX = LINE + HUB / 2;                    // hub, bumps and trenches sit just past the zone line
 const BUMP_OUT = HUB / 2 + BUMP_W, RISER = 0.30;   // a 12in trench riser stands between bump and trench
 const TRENCH_IN = BUMP_OUT + RISER, TRENCH_W = MZ - TRENCH_IN;
+// The part of a trench that is overhead, measured from the field model: one beam about 4in deep across the lane, 22.25in up,
+// with a wider gusset where it meets the riser. The lane under it is 47in long, but only the beam is in a tall robot's way.
+const BEAM_HX = 0.0505, BEAM_TOP = 0.80, GUSSET_HX = 0.18, GUSSET_W = 0.2;
 const TOWER_D = 45 * IN, UP_GAP = 32.25 * IN, UP_W = 3.5 * IN, RUNGS = [27 * IN, 45 * IN, 63 * IN];
 const TOWER_Z = 0.289, TOWER_UPX = 1.06;        // the tower is off-centre along the wall
 const DEPOT_W = 42 * IN, DEPOT_D = 27 * IN, DEPOT_OFF = -1.93, CHUTE_Z = MZ + 3.37;
@@ -372,7 +375,8 @@ for (const a of ['blue', 'red']) {
   const add = (x, z, hx, hz, kind) => { const [mx, mz] = mirror(a, x, z); OBSTACLES.push({ x: mx, z: mz, hx, hz, kind }); };
   add(HUBX, MZ, HUB / 2, HUB / 2, 'solid');
   for (const s of [-1, 1]) {
-    add(HUBX, MZ + s * (TRENCH_IN + TRENCH_W / 2), TRENCH_D / 2, TRENCH_W / 2, 'overhead');
+    add(HUBX, MZ + s * (TRENCH_IN + TRENCH_W / 2), BEAM_HX, TRENCH_W / 2, 'overhead');
+    add(HUBX, MZ + s * (TRENCH_IN + GUSSET_W / 2), GUSSET_HX, GUSSET_W / 2, 'overhead');
     add(HUBX, MZ + s * (BUMP_OUT + RISER / 2), TRENCH_D / 2, RISER / 2, 'solid');
     add(TOWER_UPX, MZ + TOWER_Z + s * (UP_GAP + UP_W) / 2, UP_W / 2, UP_W / 2, 'solid');
   }
@@ -870,10 +874,12 @@ function buildField() {
       box(TRENCH_D, 0.5, RISER, mat(0x55657c), qx, 0.25, qz);
       fixedBox(TRENCH_D / 2, 0.25, RISER / 2, qx, 0.25, qz);
       const [tx, tz] = at(HUBX, MZ + s * (TRENCH_IN + TRENCH_W / 2));
-      const roofH = TRENCH_H - TRENCH_CLEAR;
-      box(TRENCH_D, roofH, TRENCH_W, new THREE.MeshStandardMaterial({ color: 0x55657c, transparent: true, opacity: 0.55 }), tx, TRENCH_CLEAR + roofH / 2, tz);
-      fixedBox(TRENCH_D / 2, roofH / 2, TRENCH_W / 2, tx, TRENCH_CLEAR + roofH / 2, tz);
-      for (const cx of [-1, 1]) for (const cz of [-1, 1]) box(0.05, TRENCH_CLEAR, 0.05, mat(0x7f90a8), tx + cx * (TRENCH_D / 2 - 0.03), TRENCH_CLEAR / 2, tz + cz * (TRENCH_W / 2 - 0.03));
+      // the beam runs from the guardrail across the lane and over the riser; fuel bounces off it, and off the gusset beside the riser
+      const roofH = BEAM_TOP - TRENCH_CLEAR, span = TRENCH_W + RISER, [beamX, beamZ] = at(HUBX, MZ + s * (BUMP_OUT + span / 2)), [gusX, gusZ] = at(HUBX, MZ + s * (BUMP_OUT + (RISER + GUSSET_W) / 2));
+      box(BEAM_HX * 2, roofH, span, mat(0x55657c), beamX, TRENCH_CLEAR + roofH / 2, beamZ);
+      fixedBox(BEAM_HX, roofH / 2, span / 2, beamX, TRENCH_CLEAR + roofH / 2, beamZ);
+      box(GUSSET_HX * 2, roofH, RISER + GUSSET_W, mat(0x55657c), gusX, TRENCH_CLEAR + roofH / 2, gusZ);
+      fixedBox(GUSSET_HX, roofH / 2, (RISER + GUSSET_W) / 2, gusX, TRENCH_CLEAR + roofH / 2, gusZ);
 
       // TOWER uprights
       const [ux, uz] = at(TOWER_UPX, MZ + TOWER_Z + s * (UP_GAP + UP_W) / 2);
@@ -905,6 +911,9 @@ function loadFieldModel() {
     gltf.scene.traverse(o => {
       if (!o.isMesh) return;
       o.receiveShadow = true; o.castShadow = !o.material.transparent; if (o.material.transparent) o.material.depthWrite = false;
+      if (/^field_23$/.test(o.name)) {              // the black backstop net above each hub: see-through, so shots behind it stay visible
+        o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.18; o.material.depthWrite = false; o.castShadow = false;
+      }
       const end = (o.name + ' ' + o.parent.name).match(/end(Blue|Red)/);      // everything behind an alliance wall
       if (end) { o.material = o.material.clone(); o.material.transparent = true; o.castShadow = false; endMats[end[1].toLowerCase()].push([o.material, o.material.opacity]); }
     });
@@ -939,6 +948,39 @@ function putBall(i, x, y, z, vx = 0, vy = 0, vz = 0) {
 }
 function takeBall(i) { const b = balls[i]; b.on = false; b.shooter = null; if (b.flying) { b.flying = false; b.body.setLinearDamping(ROLL_DAMP); } b.body.setEnabled(false); }
 
+// ---------- human players ----------
+// One stands at each outpost with the fuel staged there, and throws it at their hub whenever it is active. They also take
+// back any fuel that reaches the foot of the outpost. About seven throws in ten are on target; the rest fall short, long or wide.
+const HP_ACC = 0.7, HP_AIM = 0.68, HP_PERIOD = 1.4, HP_AT = [0.3, 1.6];      // hit rate wanted; share of throws aimed true (a few wild ones bounce in, so it is a little lower); seconds between throws; and where the fuel leaves the hand (from the wall, height)
+const hpFigures = {};
+for (const a of ['blue', 'red']) {
+  const g = new THREE.Group(), [x, z] = mirror(a, -0.62, CHUTE_Z), skin = mat(0xe3b28f), dark = mat(0x1d2632);
+  box(0.36, 0.85, 0.24, dark, 0, 0.43, 0, g); box(0.42, 0.6, 0.26, mat(COL[a]), 0, 1.15, 0, g);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), skin); head.position.y = 1.6; g.add(head);
+  const arm = new THREE.Group(); arm.position.set(0, 1.4, 0.2); box(0.1, 0.55, 0.1, skin, 0, -0.27, 0, arm); g.add(arm);
+  g.position.set(x, 0, z); g.rotation.y = a === 'blue' ? 0 : Math.PI; scene.add(g); hpFigures[a] = { g, arm };
+}
+function stepHumans(dt) {
+  const can = game.mode === 'free' || (game.t >= PHASES[0][1] && !(game.hold > 0));       // not during AUTO or the pauses
+  for (const a of ['blue', 'red']) {
+    const h = game.hp[a]; if (!h) continue;
+    for (let i = 0; i < FUEL && h.stock.length < 60; i++) {        // fuel at the foot of the outpost goes back to the human player
+      const b = balls[i]; if (!b.on || b.flying || pos[i * 3 + 1] > 0.3) continue;
+      const [lx, lz] = mirror(a, pos[i * 3], pos[i * 3 + 2]);
+      if (lx < 0.24 && Math.abs(lz - CHUTE_Z) < 0.55) { takeBall(i); h.stock.push(i); }
+    }
+    h.cool -= dt; h.swing = Math.max(0, h.swing - dt * 3);
+    if (h.cool > 0 || !h.stock.length || !can || !hubActive(a)) continue;
+    h.cool = HP_PERIOD * (0.8 + Math.random() * 0.4); h.swing = 1;
+    const i = h.stock.pop(), hub = HUBS[a], [sx, sz] = mirror(a, HP_AT[0], CHUTE_Z), py = HP_AT[1];
+    const ang = Math.random() * Math.PI * 2, off = Math.random() < HP_AIM ? Math.random() * HP_GOOD : HP_MISS[0] + Math.random() * (HP_MISS[1] - HP_MISS[0]);
+    const dx = hub.x + Math.cos(ang) * off - sx, dz = hub.z + Math.sin(ang) * off - sz, d = Math.hypot(dx, dz), dh = HUB_H + 0.15 - py, th = 1.0;
+    const v = Math.sqrt(G * d * d / (2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dh)));
+    putBall(i, sx, py, sz, dx / d * v * Math.cos(th), v * Math.sin(th), dz / d * v * Math.cos(th));
+    balls[i].flying = true; balls[i].body.setLinearDamping(0);
+  }
+}
+const HP_GOOD = 0.15, HP_MISS = [1.0, 1.5];     // how far from the middle of the hub a good throw and a bad throw are aimed
 function stageFuel() {
   returning.length = 0;
   for (let i = 0; i < FUEL; i++) takeBall(i);
@@ -950,9 +992,8 @@ function stageFuel() {
     for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {         // 24 in the depot
       const [x, z] = mirror(a, 0.1 + i * sp, MZ + DEPOT_OFF + (j - 2.5) * sp); putBall(next++, x, BALL_R, z);
     }
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {         // 24 fed out of the outpost chute
-      const [x, z] = mirror(a, 0.35 + i * sp, CHUTE_Z + (j - 2.5) * sp); putBall(next++, x, BALL_R, z);
-    }
+    game.hp[a] = { stock: [], cool: 1 + Math.random(), swing: 0 };
+    for (let k = 0; k < 24; k++) game.hp[a].stock.push(next++);       // 24 in the outpost, with the human player
   }
   const left = FUEL - next, cols = Math.floor(206 * IN / sp), rows = Math.ceil(left / cols);
   for (let k = 0; k < left; k++) {                                   // the rest, corralled at mid-field
@@ -1378,9 +1419,10 @@ function pickBall(r) {
     if (!balls[i].on || pos[i * 3 + 1] > 0.3) continue;
     const x = pos[i * 3], z = pos[i * 3 + 2];
     if (r.type.tall && underTrench(x, z)) continue;
-    if ((x < TOWER_D + 0.2 || x > L - TOWER_D - 0.2) && Math.abs(z - MZ) < 1.15) continue;
+    if ((x < TOWER_D + 0.5 || x > L - TOWER_D - 0.5) && Math.abs(z - MZ) < 1.7) continue;      // round a tower: easy to get wedged
     if (avoid && Math.abs(x - avoid[0]) < 1 && Math.abs(z - avoid[1]) < 1) continue;
     if (r.type.shuttle && (x < HUBX + BAND || x > L - HUBX - BAND)) continue;     // a shuttle only works the neutral zone
+    if (r.ai.off && (r.alliance === 'blue' ? x < LINE + 0.3 : x > L - LINE - 0.3)) continue;      // hub off: fuel already on its own side can stay there
     const key = Math.floor(z / CLUMP) * cols + Math.floor(x / CLUMP), c = cells.get(key);
     if (c) { c.n++; c.x += x; c.z += z; } else cells.set(key, { n: 1, x, z });
   }
@@ -1394,9 +1436,10 @@ function pickBall(r) {
     let dist = Math.abs(x - r.x) + Math.abs(z - r.z);
     if ((r.x - HUBX) * (x - HUBX) < 0) dist += 3;                                  // each hub line crossed is a detour through a lane
     if ((r.x - (L - HUBX)) * (x - (L - HUBX)) < 0) dist += 3;
-    if (!r.type.shuttle) dist += 0.35 * Math.abs(x - homeX);                       // and the load still has to come home
+    if (!r.type.shuttle && !r.ai.off) dist += 0.35 * Math.abs(x - homeX);          // and the load still has to come home (not with the hub off: then it is thrown home)
     let value = take / (dist / speed + 0.6 + take / (r.type.intake || INTAKE_RATE));
     if (mates.some(m => Math.abs(x - m[0]) < 1.2 && Math.abs(z - m[1]) < 1.2)) value *= 0.4;      // a partner is already on it
+    if (x < 0.4 || x > L - 0.4 || z < 0.4 || z > W - 0.4) value *= 0.35;                           // hard against a wall: slow, awkward work
     if (was && Math.abs(x - was[0]) < CLUMP && Math.abs(z - was[1]) < CLUMP) value *= 1.25;        // do not dither between two piles
     if (value > best) { best = value; bestAt = [x, z]; }
   }
@@ -1406,8 +1449,19 @@ function pickBall(r) {
 function scoreSpot(r) {
   const t = r.type;
   if (t.shuttle) return [wallX(r.alliance, LINE - 2.4), BUMP_LANES.reduce((b, v) => Math.abs(v - r.z) < Math.abs(b - r.z) ? v : b)];   // over the bump it came in by, clear of the lane
-  if (t.fixed) return [wallX(r.alliance, LINE - 1.5), clamp(r.z, MZ - 1.6, MZ + 1.6)];        // a dumper parks square in front of the hub
-  if (t.sotm) return [wallX(r.alliance, LINE - 1.0), clamp(r.z, 1.3, W - 1.3)];              // a turret only has to get inside the zone
+  // A shooter can score from anywhere in its zone, so it takes the nearest open patch of floor: clear of the tower and the
+  // wall, not claimed by a partner, with nobody standing on it. A little randomness keeps them from all favouring one place.
+  const spots = [];
+  for (let d = 0.95; d <= LINE - 1.25; d += 0.7) for (let z = 0.85; z <= W - 0.85; z += 0.8) {
+    if (LINE - d < TOWER_D + 0.9 && Math.abs(z - MZ - TOWER_Z) < 1.5) continue;       // the tower
+    if (t.fixed && Math.hypot(d + HUB / 2, z - MZ) < 1.3) continue;                            // a straight shooter needs a little room to lob over the rim
+    spots.push([wallX(r.alliance, LINE - d), z]);
+  }
+  const close = (o, p, d) => Math.hypot(o[0] - p[0], o[1] - p[1]) < d;
+  const taken = p => game.robots.some(o => o !== r && ((o.alliance === r.alliance && !o.human && !o.remote && o.ai.mode === 'score' && o.ai.goal && close(o.ai.goal, p, 1.15)) || close([o.x, o.z], p, 1.0)));
+  let best = null, cost = 1e9;
+  for (const p of spots) { const c = Math.abs(p[0] - r.x) + Math.abs(p[1] - r.z) + Math.random() * 1.2 + (taken(p) ? 50 : 0); if (c < cost) { cost = c; best = p; } }
+  if (best) return best;
   return [wallX(r.alliance, 2.5), clamp(r.z, 1.3, W - 1.3)];
 }
 function think(r, dt) {
@@ -1424,26 +1478,37 @@ function think(r, dt) {
   } else {
     // A shuttle hauls big loads whatever the hub is doing; a dumper wants a deep hopper before it parks to unload.
     const fill = t.shuttle ? 0.6 : t.fixed ? Math.max(sk.fill, 0.75) : sk.fill;
-    const need = hubOn || t.shuttle ? Math.max(1, Math.floor(t.cap * fill)) : t.cap;
-    if (a.mode === 'collect' && (r.hold.length >= need || (r.hold.length > 0 && left < 10))) {
+    // Hub off: fuel is no use at home, so it works the rest of the field and throws what it finds back onto its own side in small loads.
+    const passLoad = Math.min(t.cap, Math.max(5, Math.floor(t.cap * 0.25)));
+    // "Off" means the hub is dark and will stay dark for a while yet: with it about to come back on, it is time to load up and get home.
+    const ph = phaseIndex(), off = a.off = game.mode === 'match' && !t.shuttle && !hubOn && !(hubOnIn(r.alliance, ph + 1) && phaseStart(ph + 1) - game.t < 6);
+    const need = !off ? Math.max(1, Math.floor(t.cap * (hubOn || t.shuttle ? fill : 1))) : passLoad;
+    // Off shift there is nothing to do at home, and a turret passes as it drives, so neither sits in "score" waiting: they go out and work.
+    if (off && (home || t.sotm)) { if (a.mode !== 'collect') { a.mode = 'collect'; a.replan = 0; a.target = null; } }
+    else if (a.mode === 'collect' && (r.hold.length >= need || (r.hold.length > 0 && left < 10))) {
       a.mode = 'score'; a.goal = scoreSpot(r);
     } else if (a.mode === 'score' && !r.hold.length) { a.mode = 'collect'; a.replan = 0; }
     if (a.mode === 'score') {
-      goal = a.goal || scoreSpot(r);
+      goal = a.goal || (a.goal = scoreSpot(r));
+      // Someone is standing on the spot: take another instead of shoving them off it.
+      if (!t.shuttle && Math.hypot(goal[0] - r.x, goal[1] - r.z) > 0.6 && game.robots.some(o => o !== r && Math.hypot(o.x - goal[0], o.z - goal[1]) < 0.85)) goal = a.goal = scoreSpot(r);
       const near = Math.hypot(goal[0] - r.x, goal[1] - r.z) < 0.6;
+      a.wait = home && !near && slow ? (a.wait || 0) + dt : 0;
+      const here = a.wait > 1;               // still cannot get there: unload from where it stands
       if (t.shuttle) c.shoot = home && near;                 // roll the load out once it is over the bump
       else if (t.fixed) {                                     // a dumper shoots straight: stop first, then let it line up
-        if (home) c.shoot = hubOn && near && slow;
+        if (home) { if (here) goal = [r.x, r.z]; c.shoot = hubOn && (near || here) && slow; }
         else if (!hubOn && !underTrench(r.x, r.z) && Math.abs(Math.abs(r.x - L / 2) - (L / 2 - HUBX)) > BAND + 0.3) { goal = [r.x, r.z]; c.shoot = slow; }   // dead hub: park and pass it home
       }
       else c.shoot = home ? hubOn : !hubOn;                   // away with a dead hub: pass the load home
     } else {
       a.chase = r.hold.length !== a.last ? 0 : a.chase + dt; a.last = r.hold.length;
-      if (a.chase > 5 && a.target) { a.avoid = [a.target[0], a.target[1], game.t + 10]; a.chase = 0; a.target = null; }
+      if (a.chase > 3.5 && a.target) { a.avoid = [a.target[0], a.target[1], game.t + 10]; a.chase = 0; a.target = null; }
       a.replan -= dt;
       if (a.replan <= 0 || !a.target) { a.target = pickBall(r); a.replan = sk.replan; }
       if (a.target) { goal = a.target; arrive = false; collecting = true; } else goal = t.shuttle ? [L / 2, r.z] : [wallX(r.alliance, 2.5), r.z];
       if (t.sotm && home && hubOn && r.hold.length) c.shoot = true;       // a turret scores while it keeps collecting
+      if (t.sotm && !home && !hubOn && r.hold.length && !underTrench(r.x, r.z)) c.shoot = true;      // and with its hub off, passes home as it goes
     }
   }
   const [wx, wz] = route(r, goal[0], goal[1]), final = wx === goal[0] && wz === goal[1];
@@ -1452,7 +1517,7 @@ function think(r, dt) {
   let want = r.th;
   if (a.mode === 'score' && home && final && d < 1) {
     const h = HUBS[r.alliance];
-    if (t.shuttle) want = r.alliance === 'blue' ? Math.PI : 0;                 // unload towards its own wall, deeper into the zone
+    if (t.shuttle) want = r.z < MZ ? Math.PI / 2 : -Math.PI / 2;               // unload across the zone, in front of the hub, where the shooters can get at it
     else if (!t.sotm) want = Math.atan2(h.z - r.z, h.x - r.x) + (t.rear ? Math.PI : 0);
   }
   else if (d > 0.3) want = Math.atan2(dz, dx);
@@ -1460,13 +1525,48 @@ function think(r, dt) {
   c.w = clamp(5 * err, -r.type.turn, r.type.turn);
   if (collecting && final && d < 1.2 && Math.abs(err) > 0.6) speed *= 0.35;
   if (d < 0.05) { c.vx = c.vz = 0; } else { c.vx = dx / d * speed; c.vz = dz / d * speed; }
+  // Another robot in the way: swing round the side it is not on. Meeting head-on, both keep to their own right, so they pass.
+  if (d > 0.5 && speed > 0.5) {
+    const ux = dx / d, uz = dz / d; let sx = 0, sz = 0;
+    for (const o of game.robots) {
+      if (o === r || o.climb) continue;
+      const ox = o.x - r.x, oz = o.z - r.z, od = Math.hypot(ox, oz), touch = r.radius + o.radius;
+      if (od > touch + 1.0 || od < 1e-3 || od > d + 0.3) continue;                 // far off, or beyond where it is heading
+      const ahead = (ox * ux + oz * uz) / od; if (ahead < 0.2) continue;
+      const cross = ux * oz - uz * ox, side = Math.abs(cross) < 0.2 * od ? -1 : -Math.sign(cross), k = ahead * clamp(1 - (od - touch) / 1.0, 0, 1);
+      sx += -uz * side * k; sz += ux * side * k;
+    }
+    if (sx || sz) { const vx = ux + sx * 1.4, vz = uz + sz * 1.4, n = Math.hypot(vx, vz) || 1; c.vx = vx / n * speed; c.vz = vz / n * speed; }
+  }
   if (speed > 1 && Math.hypot(r.vx, r.vz) < 0.3) a.stuck += dt; else a.stuck = Math.max(0, a.stuck - dt);
-  if (a.stuck > 0.8) {
-    a.stuck = 0; a.jig = 0.5; a.jigAng = Math.atan2(dz, dx) + (Math.random() < 0.5 ? -1 : 1) * (1.2 + Math.random());
-    if (collecting && a.target) a.avoid = [a.target[0], a.target[1], game.t + 6];
+  // Stuck: feel all the way round for room to move and take the best way out. Each failed try in a row looks further from the
+  // way it wanted to go (round the side, then straight sideways, then backing off), and after three it gives up on that goal.
+  if (a.stuck > 0.7) {
+    a.stuck = 0;
+    a.tries = game.t - (a.triedAt ?? -99) < 4 ? (a.tries || 0) + 1 : 1; a.triedAt = game.t;
+    const base = Math.atan2(dz, dx), prefer = [0.9, 1.6, 2.4, 3.1][Math.min(3, a.tries - 1)];
+    let bestAng = base + Math.PI, bestScore = -1e9;
+    for (let k = 0; k < 12; k++) {
+      const ang = base + k * Math.PI / 6;
+      let clear = 0; for (const step of [0.35, 0.7, 1.05]) { if (roomAt(r, r.x + Math.cos(ang) * step, r.z + Math.sin(ang) * step)) clear++; else break; }
+      if (!clear) continue;
+      const score = clear * 2 - Math.abs(Math.abs(wrap(ang - base)) - prefer) + Math.random() * 0.3;
+      if (score > bestScore) { bestScore = score; bestAng = ang; }
+    }
+    a.jigAng = bestAng; a.jig = 0.4 + 0.15 * a.tries;
+    if (collecting && a.target) a.avoid = [a.target[0], a.target[1], game.t + (a.tries >= 3 ? 10 : 6)];
+    if (a.tries >= 3 && a.mode === 'score') a.goal = null;       // pick another place to shoot from
     a.target = null;
   }
-  if (a.jig > 0) { a.jig -= dt; c.vx = Math.cos(a.jigAng) * vmax * 0.7; c.vz = Math.sin(a.jigAng) * vmax * 0.7; }
+  if (a.jig > 0) { a.jig -= dt; c.vx = Math.cos(a.jigAng) * vmax * 0.75; c.vz = Math.sin(a.jigAng) * vmax * 0.75; c.w = 0; }      // no turning while it backs out: turning is what wedges a long robot
+}
+// Could this robot stand at (x, z): on the field, clear of field elements and of every other robot.
+function roomAt(r, x, z) {
+  const m = r.radius + 0.05;
+  if (x < m || x > L - m || z < m || z > W - m) return false;
+  const p = Object.create(r); p.x = x; p.z = z;
+  if (OBSTACLES.some(o => (o.kind === 'solid' || isTall(r)) && overlap(p, o))) return false;
+  return !game.robots.some(o => o !== r && Math.hypot(o.x - x, o.z - z) < r.radius + o.radius + 0.05);
 }
 
 // ============================================================
@@ -1566,7 +1666,7 @@ function summary() {
 function newGame(roster, mode) {
   game.robots.forEach(removeRobot);
   game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = mode || opts.mode; game.skill = opts.skill;
-  game.bricked = false; game.brickAt = 0; game.second = 0; game.hold = 0; game.over = false; setBrickLook(false);
+  game.bricked = false; game.brickAt = 0; game.second = 0; game.hold = 0; game.over = false; game.hp = {}; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
   const zs = [MZ - 1.55, MZ + 1.55, MZ];      // in line with the bumps, clear of the trench risers
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
@@ -1703,6 +1803,7 @@ function tick() {
     putBall(e[2], h.x + out * (HUB / 2 + 0.14), 0.12 + rnd() * 0.06, h.z + off, out * (0.9 + rnd() * 1.5), rnd() * 0.5, off * 0.8 + (rnd() - 0.5) * 1.8);
     returning.splice(k, 1);
   }
+  stepHumans(dt);
   if (net.role === 'host' && ++net.ticks % 3 === 0) sendSnapshot();     // 20 snapshots a second
 }
 // The results come out the way they do at an event: the breakdown line by line, then both totals
@@ -1795,6 +1896,7 @@ function render() {
     r.mesh.userData.roller.material.emissiveIntensity = r.cmd.intake ? 2.5 : 0.2;
     if (r.cmd.intake) r.mesh.userData.roller.rotation.y += 0.5;
   }
+  for (const a of ['blue', 'red']) hpFigures[a].arm.rotation.x = -2.6 * (game.hp?.[a]?.swing || 0);      // the throwing arm
   for (const a of ['blue', 'red']) { const on = hubActive(a) && !(hubWarning(a) && performance.now() % 300 < 130); hubLights[a].color.setHex(on ? 0x4cd07d : 0x55202a); hubLights[a].emissive.setHex(on ? 0x4cd07d : 0x2a0a10); }
   const me = game.me;
   if (window.__freeCam) { /* test hook: camera driven from the console */ }
