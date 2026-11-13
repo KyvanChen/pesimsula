@@ -289,7 +289,7 @@ const COL = { blue: 0x3d86ff, red: 0xff3d5a };
 // Original robots -- generic archetypes, not modelled on any real team.
 const ROBOTS = [
   // Built from the team's own CAD (tools/build_robot.py). Stats are estimates, not measured.
-  { id: 'calgames', name: 'Elite Ball Knowledge', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
+  { id: 'calgames', num: 6036, name: 'Elite Ball Knowledge', tag: 'Your robot', color: 0xffd21a, size: 0.80, speed: 4.8, accel: 12, turn: 6.5, cap: 30, rate: 10, acc: 0.99, tall: false, climb: 0, mass: 1.3,
     model: 'robot_calgames.glb', frame: [0.70, 0.82], reach: 0.25, shotY: 0.62, sotm: true, blocker: true, overflow: true, intake: 20,
     // Fuel sits low at the front, over the rollers and out into the intake; it shuffles back when the intake stows.
     // There is no hard limit: past about 30 the pile is higher than the walls (wall) and fuel rolls off.
@@ -297,7 +297,7 @@ const ROBOTS = [
     bio: 'A turret that tracks the target and shoots on the move, over a wide roller intake. The intake stows on its four-bar, then the shot blocker swings level. No climber.' },
   // Team 2910's Re-Blitz, from their public CAD and 2026 tech binder (tools/build_robot_static.py).
   // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
-  { id: 'reblitz', name: 'Re-Blitz', tag: 'Team 2910', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
+  { id: 'reblitz', num: 2910, name: 'Re-Blitz', tag: 'Jack in the Bot', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
     model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55, top: 0.46,
     hood: { pivot: [-0.283, 0.476], up: 0.96, span: [-0.36, -0.04] },      // span: the part of the robot, front to back, that the raised hood stands over      // the shooter hood swings up about the drum axle to fire; raised, it is too tall for a trench
     muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156, intake: 24,        // four-wide shooter that throws out of the back, away from the intake
@@ -308,7 +308,7 @@ const ROBOTS = [
   // Furious George, from its CAD (tools/build_robot_static.py). An underhand shooter: fuel runs down a ramp under the
   // flywheels and is thrown up and out of the back end, two at a time. Frame, hopper and shooter positions are measured;
   // speed, capacity, rate and accuracy are estimates.
-  { id: 'george', name: 'Furious George', tag: 'Underhand shooter', color: 0x9b6bff, size: 0.86, speed: 4.7, accel: 12, turn: 6.5, cap: 60, rate: 6, acc: 0.93, tall: false, climb: 0, mass: 1.4,
+  { id: 'george', num: 840, name: 'Furious George', tag: 'Underhand shooter', color: 0x9b6bff, size: 0.86, speed: 4.7, accel: 12, turn: 6.5, cap: 60, rate: 6, acc: 0.93, tall: false, climb: 0, mass: 1.4,
     model: 'robot_george.glb', fixed: true, frame: [0.686, 0.686], reach: 0.29, shotY: 0.32,
     muzzle: -0.48, rear: true, lanes: 2, laneGap: 0.16, intake: 20,        // twin shooters low at the back end, just behind the bumper
     jam: 0.005, top: 0.54,      // jam: instead of bricking, each second one of its two shooters may die for the rest of the match, halving its rate
@@ -316,7 +316,7 @@ const ROBOTS = [
     bio: 'An over-the-bumper intake fills a tall 60-fuel hopper. Twin underhand shooters at the back end scoop fuel under the flywheels and lob it up and out of the rear at 6 a second, so a tall robot standing behind it can block the shot. It never bricks outright, but one shooter can jam and halve its rate. Fits under the trench. No climber.' },
   // A fuel shuttle, from its CAD (tools/build_robot_static.py). No shooter: it fills a tall open bin and
   // pushes the fuel back out through the intake. Frame and bin sizes are measured; the rest are estimates.
-  { id: 'shuttler', name: 'Peninsula Pups', tag: 'Fuel shuttle', color: 0xff7a1a, size: 0.88, speed: 4.4, accel: 11, turn: 6, cap: 80, rate: 18, acc: 0.9, tall: true, climb: 0, mass: 1.5,
+  { id: 'shuttler', num: 6248, name: 'Peninsula Pups', tag: 'Fuel shuttle', color: 0xff7a1a, size: 0.88, speed: 4.4, accel: 11, turn: 6, cap: 80, rate: 18, acc: 0.9, tall: true, climb: 0, mass: 1.5,
     model: 'robot_shuttler.glb', fixed: true, shuttle: true, overflow: true, brick: 0.005, top: 0.66,      // top: how tall it stands for shots to hit, kept just under where spilled fuel leaves the bin      // brick: its own odds of dying, per second
     frame: [0.675, 0.72], reach: 0.22,
     hopper: { x: [-0.33, 0.635], z: [-0.35, 0.35], y: 0.215, wall: 0.749 },
@@ -579,10 +579,10 @@ function drawLobby() {
   $('mpRoom').textContent = net.room;
   const mine = net.players.find(p => p.pid === net.me) || {};
   const setMine = change => { if (net.role === 'host') { Object.assign(net.players[0], change); hostLobby(); } else tx(net.host, { t: 'set', ...change }); };
-  choice('mpRobot', ROBOTS.map(t => t.name), () => ROBOTS.findIndex(t => t.id === mine.type), i => { opts.robot = i; setMine({ type: ROBOTS[i].id }); });
+  choice('mpRobot', ROBOTS.map(t => `${t.num} ${t.name}`), () => ROBOTS.findIndex(t => t.id === mine.type), i => { opts.robot = i; setMine({ type: ROBOTS[i].id }); });
   choice('mpSide', ['Blue', 'Red'], () => mine.alliance === 'red' ? 1 : 0, i => setMine({ alliance: i ? 'red' : 'blue' }));
   $('mpPlayers').innerHTML = net.players.map(p => `<div class="${p.alliance}"><span>${p.name.replace(/[<>&]/g, '')}${p.pid === net.me ? ' (you)' : ''}${p.pid === 0 ? ' · host' : ''}</span>` +
-    `<span>${ROBOTS.find(t => t.id === p.type)?.name || '?'}</span></div>`).join('');
+    `<span>${(t => t ? `${t.num} ${t.name}` : '?')(ROBOTS.find(t => t.id === p.type))}</span></div>`).join('');
 }
 // ---------- host ----------
 async function hostRoom() {
@@ -1225,7 +1225,7 @@ function makeRobot(type, alliance, slot, human, x, z, label) {
     r.blockBody.setEnabled(false);
   }
   r.tilt = new THREE.Group(); r.mesh = buildRobotMesh(type, alliance); r.tilt.add(r.mesh);
-  const tag = labelSprite(human ? 'YOU' : (label || type.name).toUpperCase(), human ? '#b9e6ff' : (alliance === 'blue' ? '#8db7ff' : '#ff97a6'));
+  const tag = labelSprite(human ? 'YOU' : (label ? `${type.num} ${label}` : `${type.num}`).toUpperCase(), human ? '#b9e6ff' : (alliance === 'blue' ? '#8db7ff' : '#ff97a6'));
   tag.position.set(0, (type.tall ? 0.78 : 0.44) + 0.55, 0); r.tilt.add(tag);
   scene.add(r.tilt);
   return r;
@@ -1884,7 +1884,7 @@ function finish() {
   const me = game.me, key = `${me.type.id}.${opts.size}`, mine = me.stats.scored;
   const record = !(key in best) || mine > best[key]; if (record) { best[key] = mine; save('ra.best', best); }
   const pct = me.stats.shots ? Math.round(100 * me.stats.scored / Math.max(1, me.stats.shots - me.stats.passes)) : 0;
-  $('resExtra').textContent = `You (${me.type.name}): ${mine} scored from ${me.stats.shots} shots (${pct}% of hub shots), ${me.stats.passes} passes, ` +
+  $('resExtra').textContent = `You (${me.type.num} ${me.type.name}): ${mine} scored from ${me.stats.shots} shots (${pct}% of hub shots), ${me.stats.passes} passes, ` +
     `${me.stats.intaken} picked up, tower level ${me.climb}, ${me.fouls} fouls. ` + (game.bricked ? `Your robot bricked ${Math.floor(game.brickT)} seconds in. ` : '') + (record ? 'New personal best.' : `Personal best: ${best[key]}.`);
   show('results'); reveal(s, win);
 }
@@ -2001,7 +2001,7 @@ const keyName = code => code.replace(/^Key|^Digit/, '').replace('Arrow', '').rep
 function setKeysHint() {
   $('keys').innerHTML = `${keyName(keys.forward)}${keyName(keys.left)}${keyName(keys.back)}${keyName(keys.right)} drive · ${keyName(keys.turnLeft)}/${keyName(keys.turnRight)} turn<br>` +
     `${keyName(keys.intake)} intake · ${keyName(keys.shoot)} shoot · ${keyName(keys.climb)} climb · ${keyName(keys.blocker)} blocker<br>${keyName(keys.camera)} camera · ${keyName(keys.relative)} drive mode · ${keyName(keys.hideHud)} hide HUD · Esc pause`;
-  $('mename').textContent = game.me ? `${game.me.type.name.toUpperCase()} — ${game.me.type.tag}` : '';
+  $('mename').textContent = game.me ? `${game.me.type.num} ${game.me.type.name.toUpperCase()} — ${game.me.type.tag}` : '';
 }
 function drawBinds() {
   const el = $('binds'); el.innerHTML = '';
@@ -2018,7 +2018,7 @@ function drawFoes() {
   if (!Array.isArray(opts.foes)) opts.foes = [];
   for (let k = 0; k < opts.size; k++) {
     const pick = opts.foes[k] ?? -1, b = document.createElement('button');
-    b.textContent = pick >= 0 && ROBOTS[pick] ? ROBOTS[pick].name : 'Random'; b.className = pick >= 0 ? 'sel' : '';
+    b.textContent = pick >= 0 && ROBOTS[pick] ? `${ROBOTS[pick].num} ${ROBOTS[pick].name}` : 'Random'; b.className = pick >= 0 ? 'sel' : '';
     b.onclick = () => { opts.foes[k] = pick + 1 >= ROBOTS.length ? -1 : pick + 1; save('ra.opts', opts); drawFoes(); };
     el.appendChild(b); el.append(' ');
   }
@@ -2047,7 +2047,7 @@ function renderPreview() {
 }
 function drawPicker() {
   const el = $('bots'); el.innerHTML = '';
-  ROBOTS.forEach((t, i) => { const b = document.createElement('button'); b.className = i === opts.robot ? 'sel' : ''; b.innerHTML = `${t.name}<small>${t.tag}</small>`;
+  ROBOTS.forEach((t, i) => { const b = document.createElement('button'); b.className = i === opts.robot ? 'sel' : ''; b.innerHTML = `${t.name}<small>Team ${t.num} · ${t.tag}</small>`;
     b.onclick = () => { opts.robot = i; save('ra.opts', opts); drawPicker(); }; el.appendChild(b); });
   const t = ROBOTS[opts.robot];
   if (pv.bot) pv.scene.remove(pv.bot); pv.bot = buildRobotMesh(t, 'blue'); pv.scene.add(pv.bot);
