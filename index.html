@@ -293,7 +293,7 @@ const ROBOTS = [
   // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
   { id: 'reblitz', name: 'Re-Blitz', tag: 'Team 2910', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
     model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55, top: 0.46,
-    hood: { pivot: [-0.283, 0.476], up: 0.96 },      // the shooter hood swings up about the drum axle to fire; raised, it is too tall for a trench
+    hood: { pivot: [-0.283, 0.476], up: 0.96, span: [-0.36, -0.04] },      // span: the part of the robot, front to back, that the raised hood stands over      // the shooter hood swings up about the drum axle to fire; raised, it is too tall for a trench
     muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156, intake: 24,        // four-wide shooter that throws out of the back, away from the intake
     // Inside the polycarbonate hopper: four fuel wide, from the shooter tower out over the intake.
     // The floor climbs over the intake, so fuel rolls back toward the shooter.
@@ -1217,7 +1217,10 @@ function trenchAhead(r) {
 const startFront = t => hitbox(t, t.blocker ? 1 : 0).front;      // a robot whose intake stows starts with it up
 const isTall = r => r.type.tall || r.stow > 0.3 || r.hoodUp > 0.3;      // a stowed intake or a raised hood no longer fits under a trench
 function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
-  const c = Math.cos(r.th), s = Math.sin(r.th), hb = hitbox(r.type, r.stow, r.block), ex = (hb.front + hb.back) / 2, ox = (hb.front - hb.back) / 2;
+  // Against a trench roof only the raised hood counts, so the rest of the robot may reach under while the hood touches the edge.
+  const hood = o.kind === 'overhead' && r.type.hood, full = hitbox(r.type, r.stow, r.block);
+  const hb = hood ? { front: r.type.hood.span[1], back: -r.type.hood.span[0], side: full.side } : full;
+  const c = Math.cos(r.th), s = Math.sin(r.th), ex = (hb.front + hb.back) / 2, ox = (hb.front - hb.back) / 2;
   const dx = r.x + ox * c - o.x, dz = r.z + ox * s - o.z;
   let bestPen = Infinity, nx = 0, nz = 0;
   for (const [ax, az] of [[1, 0], [0, 1], [c, s], [-s, c]]) {
@@ -1298,13 +1301,13 @@ function shotPlan(r) {
 }
 function autoAlign(r) {
   r.aligned = false;
-  if (!r.cmd.shoot || !r.hold.length || r.climb || trenchAhead(r)) return;      // no lining up in or into a trench: there is no room to turn
+  if (!r.cmd.shoot || !r.hold.length || r.climb || (r.type.hood ? !(r.hoodUp > 0.3) && underTrench(r.x, r.z) : trenchAhead(r))) return;      // no lining up inside a trench: there is no room to turn
   const plan = shotPlan(r), err = wrap(Math.atan2(plan.z - r.z, plan.x - r.x) - r.th - (r.type.rear ? Math.PI : 0));
   r.cmd.w = clamp(err * 12, -r.type.turn, r.type.turn);
   r.aligned = Math.abs(err) < 0.035 && Math.abs(r.w) < 1.5;
 }
 function fire(r, sloppyScale) {
-  if (!r.hold.length || underTrench(r.x, r.z) || (r.type.fixed && !r.aligned)) return false;
+  if (!r.hold.length || (underTrench(r.x, r.z) && !r.type.hood) || (r.type.fixed && !r.aligned)) return false;
   if (r.type.hood && !(r.hoodUp >= 0.95)) return false;      // the hood has to be up first
   const plan = shotPlan(r);
   const lanes = r.type.lanes || 1, lane = r.jam ? -r.jam * (lanes - 1) / 2 : (r.stats.shots * 3) % lanes - (lanes - 1) / 2;     // hop between lanes; a jammed shooter leaves one
@@ -1650,7 +1653,8 @@ function tick() {
     if (r.type.hood) {
       // The hood comes up to shoot and drops again shortly after. It cannot come up under a trench, and once it is up
       // the robot no longer fits under one, so a robot shooting beside a trench cannot be shoved through it.
-      const fold = trenchAhead(r), want = r.cmd.shoot && r.hold.length > 0 && !r.climb && !(game.hold > 0) && !fold;
+      const firing = r.cmd.shoot && r.hold.length > 0 && !r.climb && !(game.hold > 0);
+      const fold = !firing && trenchAhead(r), want = firing;      // it only folds for the trench when it is not shooting: a shooting robot stays up and is stopped at the roof
       r.hoodWait = want ? 0.4 : fold ? 0 : Math.max(0, (r.hoodWait || 0) - dt);
       const roof = OBSTACLES.some(o => o.kind === 'overhead' && overlap(r, o));
       const up = r.hoodWait > 0 && (!roof || r.hoodUp > 0.3);
