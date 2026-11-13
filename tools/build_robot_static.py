@@ -2,7 +2,7 @@
 """
 Turns a robot CAD assembly (STEP) into a light, single-pose GLB for the game.
 
-    py -3.12 tools/build_robot_static.py reblitz "12 - Robot 2 Top Level Assembly.step"
+    py -3.12 tools/build_robot_static.py reblitz "12 - Robot 2 Top Level Assembly.step" [--hood HOOD.step]
 
 Needs: pip install cascadio trimesh fast-simplification
 
@@ -10,6 +10,9 @@ For robots whose CAD is already centred on the chassis with Z up and the intake
 towards -Y (true of the 2910 Re-Blitz release). Nothing is animated: parts are
 merged per colour and decimated. Bumpers in the CAD are dropped, because the game
 draws its own in the alliance colour. Clear hopper panels are kept see-through.
+
+--hood names a second STEP holding just the shooter hood, exported in place. Those parts become
+hood_* nodes so the game can tilt them, and the hinge (the axle the hood turns on) is printed.
 
 Output axes match the game's robots: +X is the front (intake side), Y is up,
 the chassis is centred on the origin and sits on the floor.
@@ -31,6 +34,11 @@ DROP = re.compile(r"Screw|Bolt|Washer|Nut\b|Locknut|Rivet|Spacer|Bearing|Insert|
 CLEAR = re.compile(r"Hopper", re.I)        # sub-assembly whose big thin panels are polycarbonate
 BUDGET = 110_000                           # triangles
 
+hood_src = None
+if "--hood" in sys.argv:
+    k = sys.argv.index("--hood")
+    hood_src = sys.argv[k + 1]
+    del sys.argv[k:k + 2]
 name, src = sys.argv[1], sys.argv[2]
 here = os.path.dirname(os.path.abspath(__file__))
 out = os.path.join(here, "..", f"robot_{name}.glb")
@@ -43,8 +51,29 @@ elif not os.path.exists(raw) or os.path.getmtime(raw) < os.path.getmtime(src):
         shutil.copyfile(src, plain)
         if cascadio.step_to_glb(plain, raw, tol_linear=3.0, tol_angular=0.8) != 0:
             raise SystemExit("STEP conversion failed")
+
+
+def to_glb(step, glb):
+    with tempfile.TemporaryDirectory() as tmp:
+        plain = os.path.join(tmp, "in.step")
+        shutil.copyfile(step, plain)
+        if cascadio.step_to_glb(plain, glb, tol_linear=3.0, tol_angular=0.8) != 0:
+            raise SystemExit("STEP conversion failed")
+
+
 scene = trimesh.load(raw)
 graph = scene.graph
+hood_keys = set()
+if hood_src:
+    hood_raw = os.path.join(tempfile.gettempdir(), f"robot_{name}_hood_raw.glb")
+    if not os.path.exists(hood_raw) or os.path.getmtime(hood_raw) < os.path.getmtime(hood_src):
+        to_glb(hood_src, hood_raw)
+    hs = trimesh.load(hood_raw)
+    for node in hs.graph.nodes_geometry:
+        t, g = hs.graph[node]
+        m = hs.geometry[g]
+        if hasattr(m, "faces"):
+            hood_keys.add((len(m.faces), tuple(np.round(trimesh.transform_points(m.vertices, t).mean(0), 3))))
 
 
 def path_of(node):
@@ -65,7 +94,9 @@ for node in graph.nodes_geometry:
         rgba = tuple(int(c) for c in mesh.visual.material.main_color)
     except Exception:
         rgba = (128, 128, 128, 255)
-    parts.append(dict(path=path_of(node), verts=trimesh.transform_points(mesh.vertices, transform), faces=mesh.faces, rgba=rgba))
+    verts = trimesh.transform_points(mesh.vertices, transform)
+    parts.append(dict(path=path_of(node), verts=verts, faces=mesh.faces, rgba=rgba,
+                      hood=(len(mesh.faces), tuple(np.round(verts.mean(0), 3))) in hood_keys))
 
 floor = min(p["verts"][:, 2].min() for p in parts if not re.search("Origin Cube", p["path"]))
 # CAD -Y (intake side) -> game +X; CAD Z -> game Y (up); CAD X -> game Z.
@@ -83,13 +114,13 @@ for p in parts:
         dropped[hit.group(0).lower() if hit else "fuel" if fuel else "small"] += 1
         continue
     clear = bool(CLEAR.search(p["path"])) and size.min() < 0.01 and np.sort(size)[1] > 0.12 or p["rgba"][3] < 250
-    groups[(clear, p["rgba"][:3])].append((verts, p["faces"]))
+    groups[(p["hood"], clear, p["rgba"][:3])].append((verts, p["faces"]))
     kept += len(p["faces"])
 
 result = trimesh.Scene()
 total = 0
 lo, hi = np.full(3, 9.0), np.full(3, -9.0)
-for i, ((clear, rgb), pieces) in enumerate(sorted(groups.items())):
+for i, ((hood, clear, rgb), pieces) in enumerate(sorted(groups.items())):
     offset, vs, fs = 0, [], []
     for v, f in pieces:
         vs.append(v)
@@ -106,7 +137,7 @@ for i, ((clear, rgb), pieces) in enumerate(sorted(groups.items())):
     mesh.visual = trimesh.visual.TextureVisuals(material=PBRMaterial(
         name=f"{'clear' if clear else 'body'}_{i}", baseColorFactor=colour, metallicFactor=0.3, roughnessFactor=0.6,
         alphaMode="BLEND" if clear else "OPAQUE", doubleSided=True))
-    result.add_geometry(mesh, node_name=f"{'clear' if clear else 'body'}_{i}", geom_name=f"g_{i}")
+    result.add_geometry(mesh, node_name=f"{'hood' if hood else 'clear' if clear else 'body'}_{i}", geom_name=f"g_{i}")
     total += len(mesh.faces)
     lo, hi = np.minimum(lo, mesh.vertices.min(0)), np.maximum(hi, mesh.vertices.max(0))
 
@@ -115,3 +146,13 @@ np.set_printoptions(precision=3, suppress=True)
 print(f"{out}: {len(groups)} meshes, {total:,} triangles, {os.path.getsize(out) / 1e6:.2f} MB")
 print("bounds (game axes):", lo, hi, " floor z in CAD:", round(float(floor), 4))
 print("dropped:", dict(dropped))
+if hood_src:
+    hp = [p for p in parts if p["hood"]]
+    print(f"hood: {len(hp)} of {len(hood_keys)} parts found in the robot")
+    # The hood turns on the widest shaft bearings in the file (the main drum axle).
+    axle = [trimesh.transform_points(p["verts"], to_game) for p in hp if "1.125\" OD" in p["path"]]
+    if axle:
+        a = np.vstack(axle)
+        print("hood hinge (game x forward, y up):", ((a.min(0) + a.max(0)) / 2)[:2])
+    allv = np.vstack([trimesh.transform_points(p["verts"], to_game) for p in hp])
+    print("hood bounds (game axes):", allv.min(0), allv.max(0))

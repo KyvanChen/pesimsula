@@ -293,11 +293,12 @@ const ROBOTS = [
   // Capacity, feed rate, accuracy and frame size are the binder's numbers; speed and handling are estimates.
   { id: 'reblitz', name: 'Re-Blitz', tag: 'Team 2910', color: 0x1fb6ff, size: 0.86, speed: 4.6, accel: 13, turn: 6.5, cap: 50, rate: 30, acc: 0.95, tall: false, climb: 0, mass: 1.45,
     model: 'robot_reblitz.glb', fixed: true, frame: [0.70, 0.69], reach: 0.27, shotY: 0.55,
+    hood: { pivot: [-0.283, 0.476], up: 0.96 },      // the shooter hood swings up about the drum axle to fire; raised, it is too tall for a trench
     muzzle: -0.3, rear: true, lanes: 4, laneGap: 0.156, intake: 24,        // four-wide shooter that throws out of the back, away from the intake
     // Inside the polycarbonate hopper: four fuel wide, from the shooter tower out over the intake.
     // The floor climbs over the intake, so fuel rolls back toward the shooter.
     hopper: { x: [-0.125, 0.645], z: [-0.311, 0.311], y: 0.14, slope: [0.3, 0.3] },
-    bio: 'A wide slap-down intake feeds a 50-fuel hopper and a four-wide shooter that empties it at 30 a second. Fits under the trench. No climber.' },
+    bio: 'A wide slap-down intake feeds a 50-fuel hopper and a four-wide shooter that empties it at 30 a second. The hood swings up to shoot: with it down the robot fits under the trench, with it up it cannot be pushed through one. No climber.' },
   // A fuel shuttle, from its CAD (tools/build_robot_static.py). No shooter: it fills a tall open bin and
   // pushes the fuel back out through the intake. Frame and bin sizes are measured; the rest are estimates.
   { id: 'shuttler', name: 'Peninsula Pups', tag: 'Fuel shuttle', color: 0xff7a1a, size: 0.88, speed: 4.4, accel: 11, turn: 6, cap: 80, rate: 18, acc: 0.9, tall: true, climb: 0, mass: 1.5,
@@ -647,7 +648,7 @@ function sendSnapshot() {
   const owner = new Uint8Array(FUEL), slot = new Uint8Array(FUEL);
   game.robots.forEach((r, ri) => {
     for (const f of ROBOT_FLOATS) { dv.setFloat32(o, r[f], true); o += 4; }
-    dv.setUint8(o++, r.climb); dv.setUint8(o++, (r.cmd.intake ? 1 : 0) | (r.atTower ? 2 : 0) | (r.blockOn ? 4 : 0));
+    dv.setUint8(o++, r.climb); dv.setUint8(o++, (r.cmd.intake ? 1 : 0) | (r.atTower ? 2 : 0) | (r.blockOn ? 4 : 0) | (r.hoodUp > 0.5 ? 8 : 0));
     for (const k of ['scored', 'shots', 'passes', 'intaken']) { dv.setUint16(o, Math.min(65535, r.stats[k]), true); o += 2; }
     dv.setUint8(o++, Math.min(255, r.fouls));
     r.hold.forEach((i, k) => { owner[i] = ri + 1; slot[i] = k; });
@@ -725,6 +726,7 @@ function applySnapshot(a) {           // blend from the previous snapshot to the
     r.th = p.th + wrap(q.th - p.th) * a; r.aim = p.aim + wrap(q.aim - p.aim) * a;
     r.climb = q.climb; r.atTower = !!(q.flags & 2); r.stats = q.stats; r.fouls = q.fouls; r.hold = [];
     if (r !== game.me) { r.cmd.intake = !!(q.flags & 1); r.blockOn = !!(q.flags & 4); }
+    if (r.type.hood) r.hoodUp = clamp((r.hoodUp || 0) + (q.flags & 8 ? 0.07 : -0.07), 0, 1);
   });
   for (let i = 0; i < FUEL; i++) {
     const k = i * 3, f = nx.fuel, g = pv.fuel, b = balls[i];
@@ -989,6 +991,12 @@ function buildModelRobot(type, alliance) {
   if (!rig) {                          // one rigid model: just bumpers and the intake light
     body.traverse(o => { if (o.isMesh) { o.castShadow = !o.material.transparent; if (o.material.transparent) o.material.depthWrite = false; } });
     g.add(body); bumpers();
+    if (type.hood) {                     // the hood parts hang off a group at the hinge so they can tilt
+      const hood = new THREE.Group(), [px, py] = type.hood.pivot, list = [];
+      body.traverse(o => { if (o.isMesh && (o.name + ' ' + o.parent.name).includes('hood')) list.push(o); });
+      hood.position.set(px, py, 0); for (const o of list) { o.position.x -= px; o.position.y -= py; hood.add(o); }
+      g.add(hood); g.userData.shotHood = hood;
+    }
     const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, fz * 0.8, 8), mat(0x4cd07d, { emissive: 0x0d3a1e }));
     roller.rotation.x = Math.PI / 2; roller.position.set(fx / 2 + type.reach + 0.02, 0.2, 0); g.add(roller); g.userData.roller = roller;
     return g;
@@ -1186,7 +1194,7 @@ function hitbox(t, stow = 0, block = 0) {
   return { back, side, front: Math.max(back + (out - back) * (1 - stow), back + (plate - back) * block) };
 }
 const startFront = t => hitbox(t, t.blocker ? 1 : 0).front;      // a robot whose intake stows starts with it up
-const isTall = r => r.type.tall || r.stow > 0.3;      // a stowed intake no longer fits under a trench
+const isTall = r => r.type.tall || r.stow > 0.3 || r.hoodUp > 0.3;      // a stowed intake or a raised hood no longer fits under a trench
 function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
   const c = Math.cos(r.th), s = Math.sin(r.th), hb = hitbox(r.type, r.stow, r.block), ex = (hb.front + hb.back) / 2, ox = (hb.front - hb.back) / 2;
   const dx = r.x + ox * c - o.x, dz = r.z + ox * s - o.z;
@@ -1276,6 +1284,7 @@ function autoAlign(r) {
 }
 function fire(r, sloppyScale) {
   if (!r.hold.length || underTrench(r.x, r.z) || (r.type.fixed && !r.aligned)) return false;
+  if (r.type.hood && !(r.hoodUp >= 0.95)) return false;      // the hood has to be up first
   const plan = shotPlan(r);
   const lanes = r.type.lanes || 1, lane = (r.stats.shots * 3) % lanes - (lanes - 1) / 2;     // hop between lanes
   const at = r.type.turret ? r.type.turret.at : [r.type.muzzle || 0, 0, lane * (r.type.laneGap || 0)], co = Math.cos(r.th), si = Math.sin(r.th);
@@ -1598,6 +1607,15 @@ function tick() {
       const plan = shotPlan(r);
       r.aim += clamp(wrap(Math.atan2(plan.z - r.z, plan.x - r.x) - r.aim), -9 * dt, 9 * dt);
     }
+    if (r.type.hood) {
+      // The hood comes up to shoot and drops again shortly after. It cannot come up under a trench, and once it is up
+      // the robot no longer fits under one, so a robot shooting beside a trench cannot be shoved through it.
+      const want = r.cmd.shoot && r.hold.length > 0 && !r.climb && !(game.hold > 0);
+      r.hoodWait = want ? 0.4 : Math.max(0, (r.hoodWait || 0) - dt);
+      const roof = OBSTACLES.some(o => o.kind === 'overhead' && overlap(r, o));
+      const up = r.hoodWait > 0 && (!roof || r.hoodUp > 0.3);
+      r.hoodUp = clamp((r.hoodUp || 0) + (up ? dt : -dt) / 0.25, 0, 1);
+    }
     if (r.blockBody) {
       // Sequence: intake swings up, then the blocker deploys; lowering runs it backwards.
       // The starting stow ends when the driver runs the intake or raises the blocker; AI drivers drop it as soon as they may move.
@@ -1729,6 +1747,7 @@ function render() {
       u.blocker.rotation.z = rig.plate.swing * (1 - r.block);                         // hanging down -> level
       u.roller.visible = r.stow < 0.1;
     }
+    if (u.shotHood) { const k = r.hoodUp || 0; u.shotHood.rotation.z = r.type.hood.up * k * k * (3 - 2 * k); }
     r.mesh.userData.roller.material.emissiveIntensity = r.cmd.intake ? 2.5 : 0.2;
     if (r.cmd.intake) r.mesh.userData.roller.rotation.y += 0.5;
   }
