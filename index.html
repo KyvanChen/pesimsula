@@ -61,6 +61,10 @@
   #board .blue b { color:var(--blue); } #board .red b { color:var(--red); }
   #board .mid { padding:6px 22px; text-align:center; border-left:1px solid var(--line); border-right:1px solid var(--line); }
   #board .mid b { display:block; font-size:32px; line-height:1.05; font-variant-numeric: tabular-nums; }
+  #board .mid b.late { color:var(--red); }
+  #board .mid { min-width:150px; }
+  #board .mid .bar { height:3px; background:#07142b; border-radius:2px; margin-top:5px; overflow:hidden; }
+  #board .mid .bar i { display:block; height:100%; width:100%; background:var(--accent); }
   #board .mid small { color:var(--accent); font-size:12px; letter-spacing:.1em; }
   .hubon { color:var(--ok); } .huboff { color:var(--red); }
   #me { position:absolute; left:14px; bottom:14px; background:rgba(8,18,40,.86); border:1px solid var(--line);
@@ -73,12 +77,26 @@
             letter-spacing:.06em; text-shadow:0 2px 8px #000; text-align:center; }
   #keys { position:absolute; right:14px; bottom:14px; background:rgba(8,18,40,.7); border:1px solid var(--line);
           border-radius:12px; padding:10px 14px; font-size:12px; color:var(--dim); line-height:1.6; }
-  #toast { position:absolute; top:96px; left:50%; transform:translateX(-50%); font-size:22px; font-weight:800;
+  #shift { position:absolute; top:112px; left:50%; transform:translateX(-50%); text-align:center; pointer-events:none; text-shadow:0 2px 10px #000; }
+  #shift small { display:block; font-size:11px; letter-spacing:.14em; color:var(--dim); }
+  #shift b { display:inline-block; font-size:30px; line-height:1; font-weight:800; font-variant-numeric:tabular-nums; color:var(--text); transform-origin:50% 0; }
+  #shift.soon b { color:#ffd21a; animation:shiftpulse .5s ease-in-out infinite; }
+  @keyframes shiftpulse { 0%, 100% { transform:scale(1); } 50% { transform:scale(1.9); } }
+  #toast { position:absolute; top:190px; left:50%; transform:translateX(-50%); font-size:22px; font-weight:800;
            letter-spacing:.08em; color:var(--accent); text-shadow:0 2px 10px #000; opacity:0; transition:opacity .3s; }
   table { border-collapse:collapse; width:100%; font-variant-numeric: tabular-nums; }
   td, th { padding:6px 10px; text-align:right; border-bottom:1px solid var(--line); font-size:15px; }
   td:first-child, th:first-child { text-align:left; color:var(--dim); }
   th.b { color:var(--blue); } th.r { color:var(--red); }
+  #resBig { display:flex; gap:10px; margin:0 0 14px; }
+  #resBig div { flex:1; border-radius:10px; padding:10px 0 10px; text-align:center; border:2px solid transparent; transition:opacity .4s, border-color .2s; }
+  #resBig .b { background:rgba(61,134,255,.16); } #resBig .r { background:rgba(255,61,90,.16); }
+  #resBig small { display:block; letter-spacing:.2em; font-size:12px; color:var(--dim); }
+  #resBig b { display:block; font-size:54px; line-height:1.1; font-variant-numeric:tabular-nums; }
+  #resBig i { display:block; font-style:normal; font-weight:800; letter-spacing:.25em; font-size:12px; visibility:hidden; }
+  #resBig.blue .b { border-color:var(--blue); } #resBig.blue .b i { visibility:visible; color:var(--blue); } #resBig.blue .r { opacity:.5; }
+  #resBig.red .r { border-color:var(--red); } #resBig.red .r i { visibility:visible; color:var(--red); } #resBig.red .b { opacity:.5; }
+  #resTable tr, #resExtra { transition:opacity .35s; }
   tr.total td { font-weight:800; font-size:18px; color:var(--text); }
   #binds { display:grid; grid-template-columns: 1fr 1fr; gap:6px 16px; }
   #binds div { display:flex; justify-content:space-between; align-items:center; font-size:14px; color:var(--dim); }
@@ -110,9 +128,10 @@
 <div id="hud">
   <div id="board">
     <div class="side blue"><small>BLUE</small><b id="sb">0</b><small id="hb" class="hubon">HUB ACTIVE</small></div>
-    <div class="mid"><b id="clock">2:40</b><small id="phase">AUTO</small></div>
+    <div class="mid"><b id="clock">0:20</b><small id="phase">AUTO</small><div class="bar"><i id="phasebar"></i></div></div>
     <div class="side red"><small>RED</small><b id="sr">0</b><small id="hr" class="hubon">HUB ACTIVE</small></div>
   </div>
+  <div id="shift"><small id="shiftName"></small><b id="shiftLeft"></b></div>
   <div id="toast"></div>
   <div id="me">
     <div class="name" id="mename">ROBOT</div>
@@ -213,7 +232,8 @@
 
 <div class="screen" id="results">
   <div class="card narrow">
-    <h2 id="resTitle">Match over</h2>
+    <h2 id="resTitle">Match results</h2>
+    <div id="resBig"></div>
     <table id="resTable"></table>
     <p class="note" id="resExtra" style="margin:14px 0 0"></p>
     <div class="foot"><button id="btnMenu">Menu</button><button class="go" id="btnAgain">Play again</button></div>
@@ -252,6 +272,7 @@ const BAND = 1.0;
 // Match rules
 const PHASES = [['AUTO', 20], ['TRANSITION', 10], ['SHIFT 1', 25], ['SHIFT 2', 25], ['SHIFT 3', 25], ['SHIFT 4', 25], ['END GAME', 30]];
 const AUTO_PAUSE = 3;                      // seconds every robot is disabled between AUTO and the rest of the match, as on a real field
+const END_PAUSE = 3;                       // seconds after the final buzzer in which fuel already in the air still scores
 const MATCH_T = PHASES.reduce((a, p) => a + p[1], 0);
 const CLIMB_PTS = [0, 10, 20, 30], CLIMB_TIMES = [1.2, 3.0, 5.0], CLIMB_Y = [0, 0.35, 0.8, 1.25];
 const FOUL_PTS = 5, PIN_LIMIT = 3.0;
@@ -1461,11 +1482,23 @@ let state = 'menu', paused = false;
 const game = { robots: [], me: null, mode: 'match', skill: 1, t: 0, done: false, firstOff: null,
   score: { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } } };
 function phaseIndex() { let t = game.t; for (let i = 0; i < PHASES.length; i++) { if (t < PHASES[i][1]) return i; t -= PHASES[i][1]; } return PHASES.length - 1; }
-function hubActive(alliance) {
-  if (game.mode === 'free') return true;
-  const i = phaseIndex(); if (i < 2 || i > 5 || !game.firstOff) return true;
+function hubOnIn(alliance, i) {         // is this alliance's hub active during period i
+  if (game.mode === 'free' || i < 2 || i > 5 || !game.firstOff) return true;
   const off = (i - 1) % 2 === 1 ? game.firstOff : (game.firstOff === 'blue' ? 'red' : 'blue');
   return alliance !== off;
+}
+const hubActive = alliance => hubOnIn(alliance, phaseIndex());
+const phaseStart = i => PHASES.slice(0, i).reduce((a, p) => a + p[1], 0);
+// Game manual 6.5: fuel keeps being counted for 3 seconds after a hub deactivates, to allow for the time it takes to pass through.
+const HUB_GRACE = 3;
+function hubCounts(alliance) {
+  const i = phaseIndex();
+  return hubOnIn(alliance, i) || (i > 0 && game.t - phaseStart(i) < HUB_GRACE && hubOnIn(alliance, i - 1));
+}
+// Game manual table 5-3: a hub's lights pulse for the 3 seconds before it deactivates.
+function hubWarning(alliance) {
+  const i = phaseIndex();
+  return game.mode === 'match' && !(game.hold > 0) && i < PHASES.length - 1 && hubOnIn(alliance, i) && !hubOnIn(alliance, i + 1) && phaseStart(i + 1) - game.t <= 3;
 }
 function summary() {
   const out = {};
@@ -1484,7 +1517,7 @@ function summary() {
 function newGame(roster, mode) {
   game.robots.forEach(removeRobot);
   game.robots = []; game.t = 0; game.done = false; game.firstOff = null; game.mode = mode || opts.mode; game.skill = opts.skill;
-  game.bricked = false; game.brickAt = 0; game.second = 0; game.hold = 0; setBrickLook(false);
+  game.bricked = false; game.brickAt = 0; game.second = 0; game.hold = 0; game.over = false; setBrickLook(false);
   game.score = { blue: { auto: 0, tele: 0, foul: 0 }, red: { auto: 0, tele: 0, foul: 0 } };
   const zs = [MZ - 1.55, MZ + 1.55, MZ];      // in line with the bumps, clear of the trench risers
   const pick = al => aiRobot(game.robots.filter(o => o.alliance === al).map(o => o.type));
@@ -1523,6 +1556,7 @@ function tick() {
   const dt = STEP, before = phaseIndex();
   if (game.hold > 0) {                  // the pause after AUTO: the clock waits, fuel still in the air counts for AUTO
     game.hold -= dt;
+    if (game.hold <= 0 && game.over) { game.hold = 0; game.t = MATCH_T; finish(); return; }
     if (game.hold <= 0) {
       game.hold = 0; game.t = PHASES[0][1];
       const b = game.score.blue.auto, r = game.score.red.auto;
@@ -1531,10 +1565,11 @@ function tick() {
   } else {
     game.t += dt;
     if (game.mode === 'match' && before === 0 && phaseIndex() !== 0) { game.t = PHASES[0][1] - 1e-4; game.hold = AUTO_PAUSE; toast('AUTO OVER — ROBOTS DISABLED'); }
+    // The buzzer: robots stop, but the match is not scored until fuel in flight has landed.
+    if (game.mode === 'match' && game.t >= MATCH_T) { game.t = MATCH_T - 1e-4; game.over = true; game.hold = END_PAUSE; toast('MATCH OVER — ROBOTS DISABLED'); }
   }
   if (game.mode === 'match') {
     if (phaseIndex() !== before) toast(PHASES[phaseIndex()][0] + (hubActive(game.me.alliance) ? '' : ' — YOUR HUB IS OFF'));
-    if (game.t >= MATCH_T) { game.t = MATCH_T; finish(); return; }
   }
   readBalls();
   const sk = SKILLS[game.skill];
@@ -1593,7 +1628,7 @@ function tick() {
     for (const a of ['blue', 'red']) {
       const h = HUBS[a];
       if (Math.abs(t.x - h.x) < HUB / 2 - 0.07 && Math.abs(t.z - h.z) < HUB / 2 - 0.07) {
-        if (hubActive(a)) { game.score[a][game.mode === 'match' && phaseIndex() === 0 ? 'auto' : 'tele']++; if (b.shooter?.alliance === a) b.shooter.stats.scored++; }
+        if (hubCounts(a)) { game.score[a][game.mode === 'match' && phaseIndex() === 0 ? 'auto' : 'tele']++; if (b.shooter?.alliance === a) b.shooter.stats.scored++; }
         takeBall(i); returning.push([1.6, a, i]); break;
       }
     }
@@ -1607,21 +1642,52 @@ function tick() {
   }
   if (net.role === 'host' && ++net.ticks % 3 === 0) sendSnapshot();     // 20 snapshots a second
 }
+// The results come out the way they do at an event: the breakdown line by line, then both totals
+// counting up together, and only then the winner. Clicking the card skips to the end.
+let revealRun = 0, revealSkip = null;
+function reveal(s, win) {
+  const run = ++revealRun, live = () => run === revealRun && state === 'results';
+  const title = $('resTitle'), big = $('resBig'), extra = $('resExtra');
+  big.className = ''; big.innerHTML = '<div class="b"><small>BLUE</small><b>–</b><i>WINNER</i></div><div class="r"><small>RED</small><b>–</b><i>WINNER</i></div>';
+  const [bb, rb] = big.querySelectorAll('b'), rows = [...$('resTable').querySelectorAll('tr')].slice(1), parts = rows.filter(r => r.dataset.part), rest = rows.filter(r => !r.dataset.part);
+  title.textContent = 'MATCH RESULTS'; title.style.color = '';
+  for (const r of rows) r.style.opacity = 0; extra.style.opacity = 0;
+  const wait = ms => new Promise(done => setTimeout(done, ms));
+  const end = () => {
+    revealRun++; revealSkip = null; bb.textContent = s.blue.total; rb.textContent = s.red.total;
+    big.className = win[0] === 'B' ? 'blue' : win[0] === 'R' ? 'red' : '';
+    title.textContent = win; title.style.color = win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--accent)';
+    for (const r of rows) r.style.opacity = 1; extra.style.opacity = 1;
+  };
+  revealSkip = end;
+  (async () => {
+    await wait(900);
+    for (const r of parts) { if (!live()) return; r.style.opacity = 1; await wait(600); }
+    await wait(400);
+    for (let k = 0; k <= 40; k++) {                       // both totals climb together
+      if (!live()) return;
+      const f = 1 - (1 - k / 40) ** 2; bb.textContent = Math.round(s.blue.total * f); rb.textContent = Math.round(s.red.total * f);
+      await wait(35);
+    }
+    await wait(500);
+    if (live()) { end(); rumble(0.6, 250); }
+  })();
+}
+$('results').addEventListener('click', e => { if (!e.target.closest('button')) revealSkip?.(); });
 function finish() {
   if (net.role === 'host') { sendSnapshot(); broadcast({ t: 'end' }); }
   game.done = true; state = 'results'; $('brick').classList.remove('on');
   const s = summary(), win = s.blue.total > s.red.total ? 'BLUE WINS' : s.red.total > s.blue.total ? 'RED WINS' : 'TIE';
-  $('resTitle').textContent = win; $('resTitle').style.color = win[0] === 'B' ? 'var(--blue)' : win[0] === 'R' ? 'var(--red)' : 'var(--accent)';
-  const row = (name, key, cls = '') => `<tr class="${cls}"><td>${name}</td><td>${s.blue[key]}</td><td>${s.red[key]}</td></tr>`;
-  $('resTable').innerHTML = `<tr><th></th><th class="b">BLUE</th><th class="r">RED</th></tr>` + row('Auto fuel', 'auto') + row('Teleop fuel', 'tele') +
-    row('Tower', 'tower') + row('Foul points', 'foul') + row('Total', 'total', 'total') + row('Ranking points', 'rp') +
+  const row = (name, key, cls = '', part = '') => `<tr class="${cls}"${part && ' data-part="1"'}><td>${name}</td><td>${s.blue[key]}</td><td>${s.red[key]}</td></tr>`;
+  $('resTable').innerHTML = `<tr><th></th><th class="b">BLUE</th><th class="r">RED</th></tr>` + row('Auto fuel', 'auto', '', 1) + row('Teleop fuel', 'tele', '', 1) +
+    row('Tower', 'tower', '', 1) + row('Foul points', 'foul', '', 1) + row('Total', 'total', 'total') + row('Ranking points', 'rp') +
     `<tr><td>Bonus RP</td><td>${s.blue.bonus.join(', ') || '—'}</td><td>${s.red.bonus.join(', ') || '—'}</td></tr>`;
   const me = game.me, key = `${me.type.id}.${opts.size}`, mine = me.stats.scored;
   const record = !(key in best) || mine > best[key]; if (record) { best[key] = mine; save('ra.best', best); }
   const pct = me.stats.shots ? Math.round(100 * me.stats.scored / Math.max(1, me.stats.shots - me.stats.passes)) : 0;
   $('resExtra').textContent = `You (${me.type.name}): ${mine} scored from ${me.stats.shots} shots (${pct}% of hub shots), ${me.stats.passes} passes, ` +
     `${me.stats.intaken} picked up, tower level ${me.climb}, ${me.fouls} fouls. ` + (game.bricked ? `Your robot bricked ${Math.floor(game.brickT)} seconds in. ` : '') + (record ? 'New personal best.' : `Personal best: ${best[key]}.`);
-  show('results');
+  show('results'); reveal(s, win);
 }
 
 // ============================================================
@@ -1666,7 +1732,7 @@ function render() {
     r.mesh.userData.roller.material.emissiveIntensity = r.cmd.intake ? 2.5 : 0.2;
     if (r.cmd.intake) r.mesh.userData.roller.rotation.y += 0.5;
   }
-  for (const a of ['blue', 'red']) { const on = hubActive(a); hubLights[a].color.setHex(on ? 0x4cd07d : 0x55202a); hubLights[a].emissive.setHex(on ? 0x4cd07d : 0x2a0a10); }
+  for (const a of ['blue', 'red']) { const on = hubActive(a) && !(hubWarning(a) && performance.now() % 300 < 130); hubLights[a].color.setHex(on ? 0x4cd07d : 0x55202a); hubLights[a].emissive.setHex(on ? 0x4cd07d : 0x2a0a10); }
   const me = game.me;
   if (window.__freeCam) { /* test hook: camera driven from the console */ }
   else if (state === 'play' || state === 'results') {
@@ -1690,7 +1756,20 @@ function drawHud() {
   const s = summary(), me = game.me;
   $('sb').textContent = s.blue.total; $('sr').textContent = s.red.total;
   if (game.mode === 'free') { $('clock').textContent = '∞'; $('phase').textContent = 'FREE PLAY'; }
-  else { const left = Math.ceil(MATCH_T - game.t); $('clock').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; $('phase').textContent = game.hold > 0 ? 'AUTO OVER' : PHASES[phaseIndex()][0]; }
+  else {
+    // Counts the way a field timer does: AUTO runs 0:20 down to 0:00, then the rest of the match runs 2:20 down to 0:00.
+    const i = phaseIndex(), auto = PHASES[0][1], left = Math.ceil((i === 0 ? auto : MATCH_T) - game.t - 0.001);
+    let start = 0; for (let k = 0; k < i; k++) start += PHASES[k][1];
+    const inPhase = Math.max(0, Math.ceil(start + PHASES[i][1] - game.t - 0.001)), stopped = game.hold > 0;
+    $('clock').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    $('clock').classList.toggle('late', !stopped && i > 0 && left <= 10);
+    $('phase').textContent = stopped ? (game.over ? 'MATCH OVER' : 'AUTO OVER') : PHASES[i][0];
+    // The shift timer: seconds left in this period. It pulses larger for the last five, when the hubs are about to change.
+    $('shiftName').textContent = stopped ? '' : PHASES[i][0] + ' ENDS IN'; $('shiftLeft').textContent = stopped ? '' : inPhase;
+    $('shift').classList.toggle('soon', !stopped && inPhase <= 5);
+    $('phasebar').style.width = (stopped ? 0 : 100 * clamp((start + PHASES[i][1] - game.t) / PHASES[i][1], 0, 1)) + '%';
+  }
+  $('phasebar').parentNode.style.visibility = $('shift').style.visibility = game.mode === 'free' ? 'hidden' : '';
   for (const [id, a] of [['hb', 'blue'], ['hr', 'red']]) { const on = hubActive(a); $(id).textContent = on ? 'HUB ACTIVE' : 'HUB OFF'; $(id).className = on ? 'hubon' : 'huboff'; }
   $('fuelbar').style.width = `${Math.min(100, 100 * me.hold.length / me.type.cap)}%`;
   $('fueltxt').textContent = me.type.overflow ? `Fuel ${me.hold.length}` + (me.hold.length > me.type.cap ? ' — OVERFLOWING' : '')
