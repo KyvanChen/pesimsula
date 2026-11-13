@@ -329,7 +329,7 @@ const ROBOTS = [
   // is the team's figure; speed, capacity and accuracy are estimates, and so is which way it throws (out of the back, like Re-Blitz).
   { id: 'team8', num: 8, blockable: true, name: 'Paly Robotics', tag: 'Hooded dumper', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 45, rate: 20, acc: 0.93, tall: false, climb: 0, mass: 1.4,
     model: 'robot_team8.glb', fixed: true, frame: [0.673, 0.673], reach: 0.29, front: 0.635, shotY: 0.5, top: 0.55,
-    hood: { pivot: [-0.1125, 0.345], up: -0.6, span: [-0.36, -0.02] },      // hinged on the cross shaft in front of it, so the roller end at the back lifts to fire; raised, it is too tall for a trench
+    hood: { pivot: [-0.2855, 0.439], up: 0.8, span: [-0.36, -0.04] },      // turns about the big roller at the very back, so its front edge swings up to fire; raised, it is too tall for a trench
     muzzle: -0.26, rear: true, lanes: 4, laneGap: 0.15, intake: 22,
     hopper: { x: [0.0, 0.62], z: [-0.35, 0.35], y: 0.2 },                  // the box over the roller floor, reaching out over the intake
     bio: 'A full-width intake feeds a boxy 45-fuel hopper on a roller floor, and a four-wide shooter at the back empties it at 20 a second. The hood lifts to shoot: down, the robot just fits under the trench; up, it cannot be pushed through one. No climber.' },

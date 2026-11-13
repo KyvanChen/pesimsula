@@ -124,6 +124,7 @@ if front_x:                                # CAD +X (intake side) -> game +X; CA
     to_game = np.array([[1, 0, 0, -front_x[0]], [0, 0, 1, -floor], [0, -1, 0, front_x[1]], [0, 0, 0, 1]], dtype=float)
 
 groups = collections.defaultdict(list)
+heavy_of = {}                              # (group, index) -> the part's path in the assembly
 dropped = collections.Counter()
 kept = 0
 for p in parts:
@@ -135,8 +136,38 @@ for p in parts:
         dropped[hit.group(0).lower() if hit else "fuel" if fuel else "small"] += 1
         continue
     clear = bool(CLEAR.search(p["path"])) and size.min() < 0.01 and np.sort(size)[1] > 0.12 or p["rgba"][3] < 250 or bool(extra_clear and extra_clear.search(p["path"]))
-    groups[(p["hood"], clear, p["rgba"][:3])].append((verts, p["faces"]))
+    key = (p["hood"], clear, p["rgba"][:3])
+    heavy_of[(key, len(groups[key]))] = p["path"]
+    groups[key].append((verts, p["faces"]))
     kept += len(p["faces"])
+
+if front_x:
+    # CAD like this is one colour, so everything lands in one group, and decimating that as a single mesh tears the thin
+    # plates into shards. Thin each part by itself instead. Plates and other simple parts are left alone; the few very
+    # detailed ones lose most of their triangles; and the big bought-in sub-assemblies (swerve modules: a hundred parts
+    # each, most of the triangles in the file, mostly hidden behind the bumpers) take whatever cut is needed to fit.
+    sizes = collections.Counter(path.split(" / ")[1] for path in heavy_of.values() if path.count(" / ") > 1)
+    plan, fixed, flex = [], 0, 0
+    for key, pieces in groups.items():
+        for k, (v, f) in enumerate(pieces):
+            path = heavy_of[(key, k)]
+            if path.count(" / ") > 1 and sizes[path.split(" / ")[1]] > 20:
+                plan.append((key, k, None)); flex += len(f)
+            else:
+                r = 1.0 if len(f) <= 2500 else 0.6 if len(f) <= 12000 else 0.25
+                plan.append((key, k, r)); fixed += int(len(f) * r)
+    squeeze = min(1.0, max(0.03, (BUDGET * 1.6 - fixed) / max(1, flex)))
+    for key, k, r in plan:
+        v, f = groups[key][k]
+        r = squeeze if r is None else r
+        if r >= 1.0 or len(f) < 200:
+            continue
+        try:
+            m = trimesh.Trimesh(v, f, process=True).simplify_quadric_decimation(face_count=max(60, int(len(f) * r)))
+            groups[key][k] = (m.vertices, m.faces)
+        except Exception as err:
+            print("  could not decimate a part", err)
+    kept = 0                               # already thinned: the merged meshes below are left as they are
 
 result = trimesh.Scene()
 total = 0
@@ -148,7 +179,7 @@ for i, ((hood, clear, rgb), pieces) in enumerate(sorted(groups.items())):
         fs.append(f + offset)
         offset += len(v)
     mesh = trimesh.Trimesh(np.vstack(vs), np.vstack(fs), process=True)
-    want = int(len(mesh.faces) * min(1.0, BUDGET / kept))
+    want = int(len(mesh.faces) * min(1.0, BUDGET / kept)) if kept else 0
     if want >= 60 and len(mesh.faces) > 300:
         try:
             mesh = mesh.simplify_quadric_decimation(face_count=want)
