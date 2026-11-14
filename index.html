@@ -1351,11 +1351,13 @@ function moveRobot(r, dt) {
 }
 // What a robot takes up on the floor, in its own axes: bumpers at the back and sides, and at the front
 // whatever sticks out furthest (the intake or the bin). A stowed intake no longer sticks out.
-function hitbox(t, stow = 0, block = 0) {
+function hitbox(t, stow = 0, block = 0, high = false) {
   const [fx, fz] = t.frame || [t.size - 0.08, t.size - 0.08], back = fx / 2 + 0.04, side = fz / 2 + 0.04;
   // "front" is measured off the model with the intake out; "stowFront" is how far it still sticks out folded up.
   const out = Math.max(t.front ?? fx / 2 + (t.reach || 0.16) + 0.03, (t.hopper?.x[1] ?? 0) + 0.01, back), up = t.stowFront ?? back;
-  const plate = block > 0 && t.rig ? blockerUpAt(t)[0] + t.rig.plate.length / 2 : 0;      // a raised shot blocker reaches out over the front
+  // A raised shot blocker reaches out over the front, but well above bumper height: it only counts (high) against the tall
+  // field elements. Robots and the field walls pass under it, so against those a stowed intake really is shorter.
+  const plate = high && block > 0 && t.rig ? blockerUpAt(t)[0] + t.rig.plate.length / 2 : 0;
   return { back, side, front: Math.max(up + (out - up) * (1 - stow), back + (plate - back) * block) };
 }
 // Driving at a trench the robot would fit under if it folded down (or already under one): whatever sticks up comes down by itself.
@@ -1371,7 +1373,7 @@ const startFront = t => hitbox(t, t.blocker ? 1 : 0).front;      // a robot whos
 const isTall = r => r.type.tall || r.stow > 0.3 || r.hoodUp > 0.3;      // a stowed intake or a raised hood no longer fits under a trench
 function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
   // Against a trench roof only the raised hood counts, so the rest of the robot may reach under while the hood touches the edge.
-  const hood = o.kind === 'overhead' && r.type.hood, full = hitbox(r.type, r.stow, r.block);
+  const hood = o.kind === 'overhead' && r.type.hood, full = hitbox(r.type, r.stow, r.block, true);
   const hb = hood ? { front: r.type.hood.span[1], back: -r.type.hood.span[0], side: full.side } : full;
   const c = Math.cos(r.th), s = Math.sin(r.th), ex = (hb.front + hb.back) / 2, ox = (hb.front - hb.back) / 2;
   const dx = r.x + ox * c - o.x, dz = r.z + ox * s - o.z;
