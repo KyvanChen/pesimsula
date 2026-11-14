@@ -1619,6 +1619,7 @@ function scoreSpot(r) {
 }
 function think(r, dt) {
   const a = r.ai, sk = SKILLS[game.skill], c = r.cmd, vmax = r.type.speed * sk.speed;
+  if (r.dead) { Object.assign(c, { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false }); r.blockOn = false; return; }      // bricked: it sits where it died
   const hubOn = hubActive(r.alliance), home = inZone(r), left = game.mode === 'free' ? 999 : MATCH_T - game.t;
   const t = r.type, slow = Math.hypot(r.vx, r.vz) < 0.5;
   // A shuttle keeps its intake off at home so it does not eat what it just delivered; an open hopper stops when it is full.
@@ -1732,7 +1733,7 @@ function think(r, dt) {
 // Where the shooter is shooting from. An AI heading home with a load has already picked its spot, so the blocker can be there first.
 const blockPoint = o => !o.player && o.ai.goal && !o.ai.goal.feed && Math.hypot(o.ai.goal[0] - o.x, o.ai.goal[1] - o.z) > 0.8 ? o.ai.goal : [o.x, o.z];
 const worthBlocking = (o, r) => {
-  if (!o.type.blockable || o.alliance === r.alliance || o.climb || o.hold.length < 8) return false;
+  if (!o.type.blockable || o.alliance === r.alliance || o.climb || o.dead || o.hold.length < 8) return false;
   if (o.player ? !(inZone(o) && game.t - (o.shotAt ?? -9) < 3) : o.ai.mode !== 'score') return false;      // a driver has to be shooting; an AI has to be going to
   const p = blockPoint(o), h = HUBS[o.alliance];
   return Math.hypot(p[0] - h.x, p[1] - h.z) > 1.9;                                                         // no room to get in between
@@ -1783,7 +1784,7 @@ function press(action) {
     else { game.me.blockOn = !game.me.blockOn; toast(game.me.blockOn ? 'INTAKE STOWING — BLOCKER UP' : 'BLOCKER DOWN — INTAKE OUT'); }
   }
   else if (action === 'hideHud') $('hud').classList.toggle('on');
-  else if (action === 'reset' && game.mode === 'free') { stageFuel(); game.bricked = false; game.brickAt = 0; setBrickLook(false); toast('FIELD RESET'); }      // a reset also revives a bricked robot
+  else if (action === 'reset' && game.mode === 'free') { stageFuel(); game.bricked = false; game.brickAt = 0; setBrickLook(false); for (const r of game.robots) r.dead = false; toast('FIELD RESET'); }      // a reset also revives a bricked robot
 }
 function rumble(strength, ms) {
   const pad = (navigator.getGamepads?.() || []).find(p => p);
@@ -1897,7 +1898,12 @@ function tick() {
   if (game.second >= 1) { game.second -= 1; const me = game.me;
     if (!opts.brick || net.role) { /* bricking is off */ }
     else if (me.type.jam) { if (!me.jam && !game.over && Math.random() < me.type.jam) { me.jam = Math.random() < 0.5 ? 1 : -1; toast('A SHOOTER JAMMED — ONE LEFT'); rumble(1, 400); } }
-    else if (Math.random() < (me.type.brick ?? BRICK_CHANCE)) brick(); }
+    else if (Math.random() < (me.type.brick ?? BRICK_CHANCE)) brick();
+    // AI robots break down at the same odds as a driven one: a jam halves the shooter, a brick stops the robot for the rest of the match.
+    if (opts.brick && !net.role && !game.over) for (const r of game.robots) if (r !== me && !r.dead) {
+      if (r.type.jam) { if (!r.jam && Math.random() < r.type.jam) r.jam = Math.random() < 0.5 ? 1 : -1; }
+      else if (Math.random() < (r.type.brick ?? BRICK_CHANCE)) { r.dead = true; toast(`${r.type.num} ${r.type.name.toUpperCase()} BRICKED`); }
+    } }
   const dt = STEP, before = phaseIndex();
   if (game.hold > 0) {                  // the pause after AUTO: the clock waits, fuel still in the air counts for AUTO
     game.hold -= dt;
@@ -2228,7 +2234,7 @@ function drawHints() {
   $('hintSpread').textContent = opts.spread === 'mid' ? `About twice a real field's fuel, all at mid-field. Heavier on slow computers.`
     : opts.spread ? `About twice a real field's fuel, scattered over the whole floor. Heavier on slow computers.` : '';
   $('hintSkill').textContent = ['Slow and inaccurate: good for learning.', 'A solid event-level alliance.', 'Fast, accurate and rarely idle.'][opts.skill] || '';
-  $('hintBrick').textContent = opts.brick ? 'Your robot can die mid-match, like the real thing.' : 'Your robot never breaks down.';
+  $('hintBrick').textContent = opts.brick ? 'Any robot, yours or an AI, can die mid-match, like the real thing.' : 'No robot breaks down.';
 }
 function drawMenu() {
   choice('optMode', ['Timed match', 'Free play'], () => opts.mode === 'match' ? 0 : 1, i => opts.mode = i ? 'free' : 'match');
