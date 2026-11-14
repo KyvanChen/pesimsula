@@ -368,7 +368,7 @@ const ROBOTS = [
     bio: 'A slap-down intake under a tall open bin that reaches out over the intake. No shooter: it carries fuel and ejects it out of the front. Too tall for the trenches.' },
   // Heimdall, Team 8's dumper, from its CAD (tools/build_robot_static.py --front-x). Frame, hopper and hood are measured; the fire rate
   // is the team's figure; speed, capacity and accuracy are estimates, and so is which way it throws (out of the back, like Re-Blitz).
-  { id: 'team8', num: 8, blockable: true, name: 'Heimdall', tag: 'Paly Robotics', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 45, rate: 20, acc: 0.84, brick: 0.005, tall: false, climb: 0, mass: 1.4,
+  { id: 'team8', num: 8, blockable: true, name: 'Heimdall', tag: 'Paly Robotics', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 45, rate: 20, acc: 0.88, brick: 0.005, tall: false, climb: 0, mass: 1.4,
     model: 'robot_team8.glb', fixed: true, frame: [0.673, 0.673], reach: 0.29, front: 0.635, shotY: 0.5, top: 0.55,
     hood: { pivot: [-0.2855, 0.439], up: 0.8, span: [-0.36, -0.04] },      // turns about the big roller at the very back, so its front edge swings up to fire; raised, it is too tall for a trench
     muzzle: -0.26, rear: true, lanes: 4, laneGap: 0.15, intake: 22,
@@ -377,7 +377,7 @@ const ROBOTS = [
   // Skadi, Team 8's turret robot, from its CAD (tools/build_robot_static.py --front-nz --turret). Frame, turret position and hood hinge
   // are measured; the fire rate is the team's rough figure (6-8 a second); speed, capacity and accuracy are estimates.
   { id: 'skadi', num: 8, name: 'Skadi', tag: 'Paly Robotics', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 30, rate: 7, acc: 0.97, tall: false, climb: 0, mass: 1.35,
-    model: 'robot_skadi.glb', static: true, frame: [0.686, 0.686], reach: 0.3, front: 0.66, shotY: 0.52, top: 0.55, sotm: true, sotmSlop: 0.3, intake: 18,
+    model: 'robot_skadi.glb', static: true, frame: [0.686, 0.686], reach: 0.3, front: 0.66, shotY: 0.52, top: 0.55, sotm: true, sotmSlop: 0.2, intake: 18,
     turret: { at: [-0.137, 0.337, 0.089] },                               // off-centre: behind the middle and to one side
     tilt: { pivot: [0.085, 0.106], down: 0.04, up: -0.41 },              // the hood turns about the flywheel axle, in turret axes; farther shots tip it forward
     // Fuel comes in over the deck and runs down into the round bowl in the middle of the robot (pit), under the turret's feed.
