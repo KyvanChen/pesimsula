@@ -4,6 +4,7 @@ Turns a robot CAD assembly (STEP) into a light, single-pose GLB for the game.
 
     py -3.12 tools/build_robot_static.py reblitz "12 - Robot 2 Top Level Assembly.step" [--hood HOOD.step] [--drop REGEX]
                                          [--front-x CX,CY] [--clear REGEX]
+    py -3.12 tools/build_robot_static.py skadi ROBOT.step --front-nz CX,CZ --turret X,Y,Z,DX,DZ REGEX [--tilt REGEX]
 
 Needs: pip install cascadio trimesh fast-simplification
 
@@ -17,6 +18,13 @@ hood_* nodes so the game can tilt them, and the hinge (the axle the hood turns o
 
 --front-x CX,CY is for CAD that is not centred and has its intake towards +X instead: CX,CY is the middle of
 the chassis in CAD metres. --clear REGEX names more parts to draw see-through (hopper panels with no useful name).
+
+--front-nx CX,CZ is for CAD with Y up and the intake towards -X: CX,CZ is the middle of the chassis in CAD metres.
+--front-nz CX,CZ is the same with the intake towards -Z.
+
+--turret X,Y,Z,DX,DZ REGEX puts the parts whose path matches REGEX into turret_* nodes, for the game to spin. X,Y,Z is a
+point on the turret's axis and DX,DZ the way it fires as drawn, all in game axes; the nodes are stored in the turret's own
+axes (origin at that point, +X fires). --tilt REGEX names the turret parts that tilt with the hood: they become tilt_* nodes.
 
 Output axes match the game's robots: +X is the front (intake side), Y is up,
 the chassis is centred on the origin and sits on the floor.
@@ -32,6 +40,8 @@ import cascadio
 import numpy as np
 import trimesh
 from trimesh.visual.material import PBRMaterial
+
+np.set_printoptions(precision=3, suppress=True)
 
 DROP = re.compile(r"Screw|Bolt|Washer|Nut\b|Locknut|\bRivet|Spacer|Bearing|Insert|Shaft Collar|Origin Cube|^Fuel|"
                   r"Bumper|Chain_?\d*$|Zip Tie|PEM", re.I)
@@ -54,6 +64,26 @@ if "--clear" in sys.argv:
     k = sys.argv.index("--clear")
     extra_clear = re.compile(sys.argv[k + 1])
     del sys.argv[k:k + 2]
+front_nx = None
+if "--front-nx" in sys.argv:
+    k = sys.argv.index("--front-nx")
+    front_nx = [float(v) for v in sys.argv[k + 1].split(",")]
+    del sys.argv[k:k + 2]
+front_nz = False
+if "--front-nz" in sys.argv:
+    k = sys.argv.index("--front-nz")
+    front_nx = [float(v) for v in sys.argv[k + 1].split(",")]
+    front_nz = True
+    del sys.argv[k:k + 2]
+turret = tilt = None
+if "--tilt" in sys.argv:
+    k = sys.argv.index("--tilt")
+    tilt = re.compile(sys.argv[k + 1])
+    del sys.argv[k:k + 2]
+if "--turret" in sys.argv:
+    k = sys.argv.index("--turret")
+    turret = ([float(v) for v in sys.argv[k + 1].split(",")], re.compile(sys.argv[k + 2]))
+    del sys.argv[k:k + 3]
 if "--hood" in sys.argv:
     k = sys.argv.index("--hood")
     hood_src = sys.argv[k + 1]
@@ -117,11 +147,24 @@ for node in graph.nodes_geometry:
     parts.append(dict(path=path_of(node), verts=verts, faces=mesh.faces, rgba=rgba,
                       hood=(len(mesh.faces), tuple(np.round(verts.mean(0), 3))) in hood_keys))
 
-floor = min(p["verts"][:, 2].min() for p in parts if not re.search("Origin Cube", p["path"]))
+floor = min(p["verts"][:, 1 if front_nx else 2].min() for p in parts if not re.search("Origin Cube", p["path"]))
 # CAD -Y (intake side) -> game +X; CAD Z -> game Y (up); CAD X -> game Z.
 to_game = np.array([[0, -1, 0, 0], [0, 0, 1, -floor], [1, 0, 0, 0], [0, 0, 0, 1]], dtype=float)
 if front_x:                                # CAD +X (intake side) -> game +X; CAD Z -> game Y; CAD Y -> game -Z
     to_game = np.array([[1, 0, 0, -front_x[0]], [0, 0, 1, -floor], [0, -1, 0, front_x[1]], [0, 0, 0, 1]], dtype=float)
+if front_nx:                               # CAD -X (intake side) -> game +X; CAD Y -> game Y; CAD Z -> game -Z
+    to_game = np.array([[-1, 0, 0, front_nx[0]], [0, 1, 0, -floor], [0, 0, -1, front_nx[1]], [0, 0, 0, 1]], dtype=float)
+if front_nz:                               # CAD -Z (intake side) -> game +X; CAD Y -> game Y; CAD X -> game Z
+    to_game = np.array([[0, 0, -1, front_nx[1]], [0, 1, 0, -floor], [1, 0, 0, -front_nx[0]], [0, 0, 0, 1]], dtype=float)
+to_turret = None
+if turret:
+    (tx, ty, tz, dx, dz), turret_re = turret
+    n = np.hypot(dx, dz)
+    dx, dz = dx / n, dz / n
+    rot = np.array([[dx, 0, dz], [0, 1, 0], [-dz, 0, dx]])
+    to_turret = np.eye(4)
+    to_turret[:3, :3] = rot
+    to_turret[:3, 3] = -rot @ np.array([tx, ty, tz])
 
 groups = collections.defaultdict(list)
 heavy_of = {}                              # (group, index) -> the part's path in the assembly
@@ -136,12 +179,16 @@ for p in parts:
         dropped[hit.group(0).lower() if hit else "fuel" if fuel else "small"] += 1
         continue
     clear = bool(CLEAR.search(p["path"])) and size.min() < 0.01 and np.sort(size)[1] > 0.12 or p["rgba"][3] < 250 or bool(extra_clear and extra_clear.search(p["path"]))
-    key = (p["hood"], clear, p["rgba"][:3])
+    kind = "hood" if p["hood"] else "body"
+    if turret and turret_re.search(p["path"]):
+        kind = "tilt" if tilt and tilt.search(p["path"]) else "turret"
+        verts = trimesh.transform_points(verts, to_turret)
+    key = (kind, clear, p["rgba"][:3])
     heavy_of[(key, len(groups[key]))] = p["path"]
     groups[key].append((verts, p["faces"]))
     kept += len(p["faces"])
 
-if front_x:
+if front_x or front_nx:
     # CAD like this is one colour, so everything lands in one group, and decimating that as a single mesh tears the thin
     # plates into shards. Thin each part by itself instead. Plates and other simple parts are left alone; the few very
     # detailed ones lose most of their triangles; and the big bought-in sub-assemblies (swerve modules: a hundred parts
@@ -172,7 +219,7 @@ if front_x:
 result = trimesh.Scene()
 total = 0
 lo, hi = np.full(3, 9.0), np.full(3, -9.0)
-for i, ((hood, clear, rgb), pieces) in enumerate(sorted(groups.items())):
+for i, ((kind, clear, rgb), pieces) in enumerate(sorted(groups.items())):
     offset, vs, fs = 0, [], []
     for v, f in pieces:
         vs.append(v)
@@ -189,9 +236,11 @@ for i, ((hood, clear, rgb), pieces) in enumerate(sorted(groups.items())):
     mesh.visual = trimesh.visual.TextureVisuals(material=PBRMaterial(
         name=f"{'clear' if clear else 'body'}_{i}", baseColorFactor=colour, metallicFactor=0.3, roughnessFactor=0.6,
         alphaMode="BLEND" if clear else "OPAQUE", doubleSided=True))
-    result.add_geometry(mesh, node_name=f"{'hood' if hood else 'clear' if clear else 'body'}_{i}", geom_name=f"g_{i}")
+    result.add_geometry(mesh, node_name=f"{kind if kind != 'body' else 'clear' if clear else 'body'}_{i}", geom_name=f"g_{i}")
     total += len(mesh.faces)
-    lo, hi = np.minimum(lo, mesh.vertices.min(0)), np.maximum(hi, mesh.vertices.max(0))
+    print(f"  {kind}{' clear' if clear else ''} {rgb}: {len(mesh.faces):,} triangles, {mesh.vertices.min(0)} .. {mesh.vertices.max(0)}")
+    if kind in ("body", "hood"):
+        lo, hi = np.minimum(lo, mesh.vertices.min(0)), np.maximum(hi, mesh.vertices.max(0))
 
 result.export(out)
 np.set_printoptions(precision=3, suppress=True)

@@ -366,14 +366,22 @@ const ROBOTS = [
     frame: [0.675, 0.72], reach: 0.22, front: 0.646,
     hopper: { x: [-0.33, 0.635], z: [-0.35, 0.35], y: 0.215, wall: 0.749 },
     bio: 'A slap-down intake under a tall open bin that reaches out over the intake. No shooter: it carries fuel and ejects it out of the front. Too tall for the trenches.' },
-  // Team 8's dumper, from its CAD (tools/build_robot_static.py --front-x). Frame, hopper and hood are measured; the fire rate
+  // Heimdall, Team 8's dumper, from its CAD (tools/build_robot_static.py --front-x). Frame, hopper and hood are measured; the fire rate
   // is the team's figure; speed, capacity and accuracy are estimates, and so is which way it throws (out of the back, like Re-Blitz).
-  { id: 'team8', num: 8, blockable: true, name: 'Paly Robotics', tag: 'Hooded dumper', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 45, rate: 20, acc: 0.93, tall: false, climb: 0, mass: 1.4,
+  { id: 'team8', num: 8, blockable: true, name: 'Heimdall', tag: 'Paly Robotics', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 45, rate: 20, acc: 0.84, brick: 0.005, tall: false, climb: 0, mass: 1.4,
     model: 'robot_team8.glb', fixed: true, frame: [0.673, 0.673], reach: 0.29, front: 0.635, shotY: 0.5, top: 0.55,
     hood: { pivot: [-0.2855, 0.439], up: 0.8, span: [-0.36, -0.04] },      // turns about the big roller at the very back, so its front edge swings up to fire; raised, it is too tall for a trench
     muzzle: -0.26, rear: true, lanes: 4, laneGap: 0.15, intake: 22,
     hopper: { x: [0.0, 0.62], z: [-0.35, 0.35], y: 0.2 },                  // the box over the roller floor, reaching out over the intake
     bio: 'A full-width intake feeds a boxy 45-fuel hopper on a roller floor, and a four-wide shooter at the back empties it at 20 a second. The hood lifts to shoot: down, the robot just fits under the trench; up, it cannot be pushed through one. No climber.' },
+  // Skadi, Team 8's turret robot, from its CAD (tools/build_robot_static.py --front-nz --turret). Frame, turret position and hood hinge
+  // are measured; the fire rate is the team's rough figure (6-8 a second); speed, capacity and accuracy are estimates.
+  { id: 'skadi', num: 8, name: 'Skadi', tag: 'Paly Robotics', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 30, rate: 7, acc: 0.97, tall: false, climb: 0, mass: 1.35,
+    model: 'robot_skadi.glb', static: true, frame: [0.686, 0.686], reach: 0.3, front: 0.66, shotY: 0.52, top: 0.55, sotm: true, intake: 18,
+    turret: { at: [-0.137, 0.337, 0.089] },                               // off-centre: behind the middle and to one side
+    tilt: { pivot: [0.085, 0.106], down: 0.04, up: -0.41 },              // the hood turns about the flywheel axle, in turret axes; farther shots tip it forward
+    hopper: { x: [0.16, 0.62], z: [-0.27, 0.27], y: 0.24 },                // the white box that reaches out over the intake
+    bio: 'A turret beside a deep box hopper that reaches out over the intake. It tracks the target and shoots on the move, about 7 a second, tilting its hood for range. No climber.' },
 ];
 // An AI robot for an alliance that already has these robots. A shuttle only helps next to a shooter, so at most one, and never alone.
 const aiRobot = mates => {
@@ -1116,7 +1124,7 @@ const MODELS = {};
 for (const t of ROBOTS) if (t.model) {
   try {
     MODELS[t.id] = (await new GLTFLoader().loadAsync(t.model)).scene;
-    if (!t.fixed) {                                                              // fixed models have no moving parts
+    if (!t.fixed && !t.static) {                                                 // fixed and static models carry no rig file
       t.rig = await (await fetch(t.model.replace('.glb', '.json'))).json();      // pivots and swing angles
       t.turret = t.rig.turret;                                                   // where shots leave from, and what aims
     }
@@ -1134,6 +1142,13 @@ function buildModelRobot(type, alliance) {
       body.traverse(o => { if (o.isMesh && (o.name + ' ' + o.parent.name).includes('hood')) list.push(o); });
       hood.position.set(px, py, 0); for (const o of list) { o.position.x -= px; o.position.y -= py; hood.add(o); }
       g.add(hood); g.userData.shotHood = hood;
+    }
+    if (type.turret) {                   // turret_* and tilt_* nodes are stored in the turret's own axes: they hang off a group on its axis
+      const spin = new THREE.Group(), tilt = new THREE.Group(), list = [], [px, py] = type.tilt?.pivot || [0, 0];
+      body.traverse(o => { if (o.isMesh) { const n = o.name + ' ' + o.parent.name; if (/turret|tilt/.test(n)) list.push([o, n.includes('tilt')]); } });
+      spin.position.set(...type.turret.at); tilt.position.set(px, py, 0); spin.add(tilt);
+      for (const [o, tips] of list) { if (tips) { o.position.x -= px; o.position.y -= py; tilt.add(o); } else spin.add(o); }
+      g.add(spin); g.userData.spin = spin; g.userData.tiltHood = type.tilt && tilt;
     }
     const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, fz * 0.8, 8), mat(0x4cd07d, { emissive: 0x0d3a1e }));
     roller.rotation.x = Math.PI / 2; roller.position.set(fx / 2 + type.reach + 0.02, 0.2, 0); g.add(roller); roller.visible = false; g.userData.roller = roller;
@@ -2083,6 +2098,14 @@ function render() {
       u.swings.forEach((p, i) => { p.rotation.z = rig.swings[i].swing * r.stow; });   // arms swing on their pivots
       u.head.position.set(sx, sy, 0);                                                 // head stays level
       u.blocker.rotation.z = rig.plate.swing * (1 - r.block);                         // hanging down -> level
+    }
+    if (u.spin) {                        // a turret on a one-piece model
+      u.spin.rotation.y = -(r.aim - r.th);
+      if (u.tiltHood) {
+        const plan = shotPlan(r), want = plan.mode === 'pass' ? 1 : clamp((plan.d - 1.3) / 3.7, 0, 1), tl = r.type.tilt;
+        r.hood = (r.hood || 0) + clamp(want - (r.hood || 0), -0.035, 0.035);
+        u.tiltHood.rotation.z = tl.down + (tl.up - tl.down) * r.hood;
+      }
     }
     if (u.shotHood) { const k = r.hoodUp || 0; u.shotHood.rotation.z = r.type.hood.up * k * k * (3 - 2 * k); }
     r.mesh.userData.roller.material.emissiveIntensity = r.cmd.intake ? 2.5 : 0.2;
