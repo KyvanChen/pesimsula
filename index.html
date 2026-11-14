@@ -326,7 +326,7 @@ const AUTO_PAUSE = 3;                      // seconds every robot is disabled be
 const END_PAUSE = 3;                       // seconds after the final buzzer in which fuel already in the air still scores
 const MATCH_T = PHASES.reduce((a, p) => a + p[1], 0);
 const CLIMB_PTS = [0, 10, 20, 30], CLIMB_TIMES = [1.2, 3.0, 5.0], CLIMB_Y = [0, 0.35, 0.8, 1.25];
-const FOUL_PTS = 5, PIN_LIMIT = 3.0;
+const FOUL_PTS = 5, TOWER_FOUL_PTS = 15, PIN_LIMIT = 3.0;
 const BRICK_CHANCE = 0.0001, BRICK_SECONDS = 3.5;   // per-second odds your robot dies, and how long the banner stays up
 const RP = { energized: 100, supercharged: 360, traversal: 50 };
 const COL = { blue: 0x3d86ff, red: 0xff3d5a };
@@ -377,11 +377,12 @@ const ROBOTS = [
   // Skadi, Team 8's turret robot, from its CAD (tools/build_robot_static.py --front-nz --turret). Frame, turret position and hood hinge
   // are measured; the fire rate is the team's rough figure (6-8 a second); speed, capacity and accuracy are estimates.
   { id: 'skadi', num: 8, name: 'Skadi', tag: 'Paly Robotics', color: 0x97a3da, size: 0.86, speed: 4.6, accel: 12, turn: 6.5, cap: 30, rate: 7, acc: 0.97, tall: false, climb: 0, mass: 1.35,
-    model: 'robot_skadi.glb', static: true, frame: [0.686, 0.686], reach: 0.3, front: 0.66, shotY: 0.52, top: 0.55, sotm: true, intake: 18,
+    model: 'robot_skadi.glb', static: true, frame: [0.686, 0.686], reach: 0.3, front: 0.66, shotY: 0.52, top: 0.55, sotm: true, sotmSlop: 0.3, intake: 18,
     turret: { at: [-0.137, 0.337, 0.089] },                               // off-centre: behind the middle and to one side
     tilt: { pivot: [0.085, 0.106], down: 0.04, up: -0.41 },              // the hood turns about the flywheel axle, in turret axes; farther shots tip it forward
-    hopper: { x: [0.16, 0.62], z: [-0.27, 0.27], y: 0.24 },                // the white box that reaches out over the intake
-    bio: 'A turret beside a deep box hopper that reaches out over the intake. It tracks the target and shoots on the move, about 7 a second, tilting its hood for range. No climber.' },
+    // Fuel comes in over the deck and runs down into the round bowl in the middle of the robot (pit), under the turret's feed.
+    hopper: { x: [-0.19, 0.62], z: [-0.27, 0.27], y: 0.18, pit: { at: [0.032, -0.048], r: 0.21, y: 0.10, pull: 2.5, core: 0.12 } },      // core: the cone standing in the middle of the bowl
+    bio: 'Fuel runs from the intake box down into a round bowl in the middle of the robot, and a turret beside it shoots about 7 a second, tilting its hood for range. It can shoot on the move, but loses accuracy the faster it drives. No climber.' },
 ];
 // An AI robot for an alliance that already has these robots. A shuttle only helps next to a shooter, so at most one, and never alone.
 const aiRobot = mates => {
@@ -1236,7 +1237,8 @@ function stepHoppers(dt, spill) {      // spill: fuel that tops the walls leaves
     const h = hopperOf(r), back = (h.stowBack || 0) * r.stow, co = Math.cos(r.th), si = Math.sin(r.th);
     const x0 = h.x[0] - back + BALL_R, x1 = h.x[1] - back - BALL_R, z0 = h.z[0] + BALL_R, z1 = h.z[1] - BALL_R;
     const open = r.type.overflow && h.wall !== undefined, rim = open ? h.wall : Infinity;
-    const floorAt = x => h.y + BALL_R + (h.slope ? Math.max(0, x + back - h.slope[0]) * h.slope[1] : 0);
+    const pit = h.pit;                    // a round bowl sunk into the floor that loose fuel runs down into
+    const floorAt = (x, z) => pit && z !== undefined && Math.hypot(x - pit.at[0], z - pit.at[1]) < pit.r ? pit.y + BALL_R : h.y + BALL_R + (h.slope ? Math.max(0, x + back - h.slope[0]) * h.slope[1] : 0);
     // how the robot is accelerating, seen from inside it
     let vx = (r.x - (r.hx ?? r.x)) / dt, vz = (r.z - (r.hz ?? r.z)) / dt;
     if (Math.hypot(vx, vz) > 9) vx = vz = 0;                                       // a reset or respawn, not driving
@@ -1255,7 +1257,9 @@ function stepHoppers(dt, spill) {      // spill: fuel that tops the walls leaves
         feeding[i] = pre ? 0 : FEED_T;
       }
       if (feeding[i] > 0) { feeding[i] -= dt; hv[a] = -FEED_V; hv[a + 1] = 0; hv[a + 2] = 0; continue; }       // still in the rollers
-      hv[a] = (hv[a] + gx * dt) * damp; hv[a + 1] = (hv[a + 1] - G * dt) * damp; hv[a + 2] = (hv[a + 2] + gz * dt) * damp;
+      let px = 0, pz = 0;
+      if (pit) { const ex = pit.at[0] - hp[a], ez = pit.at[1] - hp[a + 2], e = Math.hypot(ex, ez); if (e > (pit.core || 0) + 0.03) { px = ex / e * pit.pull; pz = ez / e * pit.pull; } }
+      hv[a] = (hv[a] + (gx + px) * dt) * damp; hv[a + 1] = (hv[a + 1] - G * dt) * damp; hv[a + 2] = (hv[a + 2] + (gz + pz) * dt) * damp;
       stillHeld[i] = 1;
     }
     const from = new Float32Array(n * 3);
@@ -1277,7 +1281,8 @@ function stepHoppers(dt, spill) {      // spill: fuel that tops the walls leaves
         const a = hold[k] * 3;
         if (feeding[hold[k]] > 0) hp[a + 2] = clamp(hp[a + 2], z0, z1);
         else if (hp[a + 1] <= rim) { hp[a] = clamp(hp[a], x0, x1); hp[a + 2] = clamp(hp[a + 2], z0, z1); }      // above the walls nothing holds it in
-        const f = floorAt(clamp(hp[a], x0, x1)); if (hp[a + 1] < f) hp[a + 1] = f;
+        if (pit?.core) { const ex = hp[a] - pit.at[0], ez = hp[a + 2] - pit.at[1], e = Math.hypot(ex, ez); if (e < pit.core && hp[a + 1] < pit.y + 0.22) { const k = e > 1e-4 ? pit.core / e : 0; hp[a] = pit.at[0] + (k ? ex * k : pit.core); hp[a + 2] = pit.at[1] + ez * k; } }      // fuel goes round the cone, not through it
+        const f = floorAt(clamp(hp[a], x0, x1), hp[a + 2]); if (hp[a + 1] < f) hp[a + 1] = f;
       }
     }
     for (let k = n - 1; k >= 0; k--) {
@@ -1428,7 +1433,7 @@ function collideRobots() {
     // neither keeps driving into the other
     const va = a.vx * nx + a.vz * nz, vb = b.vx * nx + b.vz * nz;
     if (va > vb) { const m = va * (1 - sa) + vb * sa; a.vx += (m - va) * nx; a.vz += (m - va) * nz; b.vx += (m - vb) * nx; b.vz += (m - vb) * nz; }
-    if (!pass && a.alliance !== b.alliance) { pinCheck(a, b, nx, nz); pinCheck(b, a, -nx, -nz); }
+    if (!pass && a.alliance !== b.alliance) { pinCheck(a, b, nx, nz); pinCheck(b, a, -nx, -nz); contactFoul(a, b); contactFoul(b, a); }
   }
 }
 // A robot held by a wall or a field element cannot give way, so whoever is pushing it is the one that backs out.
@@ -1446,6 +1451,18 @@ function settleRobots() {
 function pinCheck(p, v, nx, nz) {      // p shoving v into a wall or field element for 3 s is a foul
   const pushing = p.cmd.vx * nx + p.cmd.vz * nz > 0.5;
   if (pushing && v.contact && Math.hypot(v.vx, v.vz) < 0.5 && !v.climb) p.pinning = true;
+}
+// Contact fouls, p against v (opponents that are touching). Each gives points to the other alliance, at most once every 3 s per robot.
+//   END GAME: touching a robot that is at its own tower (no robot here climbs yet, so being at the tower is what counts), or on it.
+//   AUTO: touching an opponent while over the centre line, on their half of the field.
+function contactFoul(p, v) {
+  if (game.mode !== 'match' || game.over || game.t < (p.foulAt ?? -9) + 3 || p.climb) return;
+  const phase = phaseIndex(), far = p.alliance === 'blue' ? p.x > L / 2 : p.x < L / 2;
+  const tower = phase === PHASES.length - 1 && (v.climb > 0 || v.atTower), auto = phase === 0 && far;
+  if (!tower && !auto) return;
+  p.foulAt = game.t; p.fouls++;
+  game.score[v.alliance].foul += tower ? TOWER_FOUL_PTS : FOUL_PTS;
+  toast(`FOUL — ${p.alliance.toUpperCase()} ${tower ? 'CONTACT AT THE TOWER' : 'CONTACT OVER THE LINE IN AUTO'}`);
 }
 
 // ---------- intake / shooter / climb ----------
@@ -1504,12 +1521,13 @@ function fire(r, sloppyScale) {
   // Shooting while driving. Without a turret nothing corrects for the robot's own motion: the shot carries most of it and
   // scatters more the faster it goes. A turret corrects for it, but flat out it starts to fall a little behind.
   const pace = Math.hypot(r.vx, r.vz), flatOut = Math.max(0, pace / r.type.speed - 0.6) / 0.4;
-  const shake = r.type.sotm ? flatOut * 0.01 : Math.min(pace, 5) * 0.035;
+  const loose = r.type.sotmSlop || 0;      // sotmSlop: how much of a turretless robot's moving-shot error a turret still has (0 = none)
+  const shake = r.type.sotm ? flatOut * 0.01 + loose * Math.min(pace, 5) * 0.035 : Math.min(pace, 5) * 0.035;
   const v = Math.sqrt(G * d * d / (2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dh))) * (1 + gauss() * (sloppy * 0.3 + shake * 0.6));
   // A fixed shooter can only throw straight ahead: the robot has to be lined up first.
   const yaw = (r.type.fixed ? r.th + (r.type.rear ? Math.PI : 0) : Math.atan2(dz, dx)) + gauss() * (sloppy * 0.45 + shake), vh = v * Math.cos(th);
   // A good shooter cancels its own motion; a sloppy one lets the shot drift
-  const drift = r.type.sotm ? flatOut * 0.05 : 0.8;
+  const drift = r.type.sotm ? flatOut * 0.05 + loose * 0.8 : 0.8;
   putBall(i, px, py, pz, Math.cos(yaw) * vh + r.vx * drift, v * Math.sin(th), Math.sin(yaw) * vh + r.vz * drift);
   balls[i].shooter = r; balls[i].flying = true; balls[i].body.setLinearDamping(0); r.stats.shots++; r.shotAt = game.t;
   if (plan.mode === 'pass') r.stats.passes++;
