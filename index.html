@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Pesimsula</title>
 <style>
   :root { --bg:#061022; --panel:#0c1c3a; --line:#1f3b6b; --text:#eaf2ff; --dim:#8ba6d0;
@@ -131,6 +131,39 @@
              text-shadow:0 0 22px rgba(216,38,47,.55), 0 4px 0 #000; }
   #brick small { color:#c9d1dc; letter-spacing:.3em; text-transform:uppercase; font-size:13px; }
   @keyframes brickin { from { opacity:0; transform:translateY(-50%) scale(1.25); } to { opacity:1; transform:translateY(-50%) scale(1); } }
+  /* ---------- touch controls (phones and tablets) */
+  canvas#view { touch-action:none; }
+  #touch { position:fixed; inset:0; z-index:6; display:none; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
+  body.touch #touch.on { display:block; }
+  #touch .zone { position:absolute; top:28%; bottom:0; width:44%; }
+  #tL { left:0; } #tR { right:0; }
+  .stick { position:absolute; left:calc(env(safe-area-inset-left, 0px) + 100px); top:calc(100% - 100px); width:124px; height:124px; margin:-62px 0 0 -62px; border-radius:50%;
+           border:2px solid rgba(255,255,255,.28); background:rgba(8,18,40,.4); pointer-events:none; }
+  #tR .stick { left:calc(100% - 100px - env(safe-area-inset-right, 0px)); }
+  .stick i { position:absolute; left:50%; top:50%; width:56px; height:56px; margin:-28px; border-radius:50%; background:rgba(255,255,255,.4); }
+  .stick small { position:absolute; left:0; right:0; top:-22px; text-align:center; font-size:11px; letter-spacing:.14em; color:rgba(255,255,255,.55); }
+  .stick.held { border-color:var(--accent); } .stick.held small { visibility:hidden; }
+  #touch button { position:absolute; padding:0; border-radius:50%; font:inherit; font-weight:800; font-size:13px; letter-spacing:.06em; color:#fff;
+                  background:rgba(8,18,40,.6); border:2px solid rgba(255,255,255,.35); touch-action:none; }
+  #touch button.held, #touch button.lit { background:var(--accent); border-color:var(--accent); color:#04122b; }
+  #tShoot { right:calc(env(safe-area-inset-right, 0px) + 18px); bottom:186px; width:84px; height:84px; }
+  #tIntake { right:calc(env(safe-area-inset-right, 0px) + 116px); bottom:196px; width:72px; height:72px; }
+  #tBlock { right:calc(env(safe-area-inset-right, 0px) + 200px); bottom:150px; width:64px; height:64px; font-size:11px; }
+  #tClimb { right:calc(env(safe-area-inset-right, 0px) + 196px); bottom:60px; width:64px; height:64px; font-size:11px; }
+  #tbar { position:absolute; top:8px; right:calc(env(safe-area-inset-right, 0px) + 8px); display:flex; gap:6px; }
+  #touch #tbar button { position:static; width:auto; height:36px; padding:0 11px; border-radius:9px; font-size:11px; }
+  body.touch #keys { display:none; }
+  body.touch #board { top:6px; transform:translateX(-50%) scale(.68); transform-origin:50% 0; }
+  body.touch #me { left:calc(env(safe-area-inset-left, 0px) + 8px); top:8px; bottom:auto; transform:scale(.68); transform-origin:0 0; }
+  body.touch #shift { top:64px; transform:translateX(-50%) scale(.7); transform-origin:50% 0; }
+  body.touch #toast { top:108px; font-size:16px; white-space:nowrap; }
+  body.touch #status { bottom:8px; font-size:13px; max-width:46vw; }
+  @media (orientation: portrait) {
+    #tbar { top:66px; } body.touch #me { top:110px; }
+    #touch .zone { top:45%; width:50%; }
+    body.touch #shift { top:150px; } body.touch #toast { top:196px; }
+    #tBlock { right:18px; bottom:284px; } #tClimb { right:116px; bottom:284px; }
+  }
   #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20;
              background:var(--bg); font-size:18px; color:var(--dim); text-align:center; padding:20px; }
 </style>
@@ -164,6 +197,16 @@
   </div>
   <div id="status"></div>
   <div id="keys"></div>
+</div>
+
+<div id="touch">
+  <div class="zone" id="tL"><div class="stick"><small>DRIVE</small><i></i></div></div>
+  <div class="zone" id="tR"><div class="stick"><small>TURN</small><i></i></div></div>
+  <button id="tShoot">SHOOT</button>
+  <button id="tIntake">INTAKE</button>
+  <button id="tBlock">BLOCK</button>
+  <button id="tClimb">CLIMB</button>
+  <div id="tbar"><button id="tReset">RESET</button><button id="tRel">MODE</button><button id="tCam">CAM</button><button id="tFull">FULL</button><button id="tPause">II</button></div>
 </div>
 
 <div class="screen" id="menu">
@@ -1790,7 +1833,9 @@ window.addEventListener('keydown', e => {
   if (state === 'play') {
     if (e.code === 'Escape') { setPaused(!paused); return; }
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
-    if (!e.repeat) press(Object.keys(keys).find(k => keys[k] === e.code));
+    const action = Object.keys(keys).find(k => keys[k] === e.code);
+    if (action && !e.repeat) touchMode(false);      // a keyboard is in use: put the touch controls away until the screen is touched again
+    if (!e.repeat) press(action);
   }
   else if (state === 'results' && !net.role && !e.repeat && e.code === keys.reset) startPlay();      // and straight into another from the results
   down.add(e.code);
@@ -1807,6 +1852,63 @@ function press(action) {
   else if (action === 'hideHud') $('hud').classList.toggle('on');
   else if (action === 'reset' && game.mode === 'free') { stageFuel(); game.bricked = false; game.brickAt = 0; setBrickLook(false); for (const r of game.robots) r.dead = false; toast('FIELD RESET'); }      // a reset also revives a bricked robot
   else if (action === 'reset' && !net.role) { startPlay(); toast('MATCH RESTARTED'); }      // single-player timed match: start it over
+}
+// ---------- touch controls: a drive stick on the left, a turn stick on the right, and buttons. They show once the screen is touched.
+// Each stick appears under the thumb, wherever in its half of the screen that lands. Intake is a switch (two thumbs are busy); shoot is held.
+const tp = { f: 0, s: 0, turn: 0, intake: false, shoot: false, climb: false, block: false };
+function clearTouch() {
+  Object.assign(tp, { f: 0, s: 0, turn: 0, shoot: false, climb: false, block: false });
+  for (const z of document.querySelectorAll('#touch .zone')) z.release?.();
+  for (const b of document.querySelectorAll('#touch button')) b.classList.remove('held');
+}
+function touchMode(on) { if (document.body.classList.contains('touch') === on) return; document.body.classList.toggle('touch', on); if (!on) clearTouch(); }
+function touchStick(id, onMove) {
+  const zone = $(id), base = zone.firstElementChild, knob = base.querySelector('i'), R = 52; let pid = null, ox = 0, oy = 0;
+  const end = () => { pid = null; base.style.left = base.style.top = knob.style.transform = ''; base.classList.remove('held'); onMove(0, 0); };
+  zone.release = end;
+  zone.addEventListener('pointerdown', e => {
+    if (pid !== null) return; e.preventDefault(); pid = e.pointerId; try { zone.setPointerCapture(pid); } catch { /* already gone */ }
+    const b = zone.getBoundingClientRect(); ox = e.clientX; oy = e.clientY;
+    base.style.left = ox - b.left + 'px'; base.style.top = oy - b.top + 'px'; base.classList.add('held');
+  });
+  zone.addEventListener('pointermove', e => {
+    if (e.pointerId !== pid) return;
+    let dx = (e.clientX - ox) / R, dy = (e.clientY - oy) / R; const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+    knob.style.transform = `translate(${dx * R}px, ${dy * R}px)`; onMove(Math.abs(dx) < 0.15 ? 0 : dx, Math.abs(dy) < 0.15 ? 0 : dy);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) zone.addEventListener(ev, e => { if (e.pointerId === pid) end(); });
+}
+function touchButton(id, onDown, onUp) {
+  const b = $(id);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch { /* already gone */ } b.classList.add('held'); onDown(); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => { if (!b.classList.contains('held')) return; b.classList.remove('held'); onUp?.(); });
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+touchStick('tL', (x, y) => { tp.f = -y; tp.s = x; });
+touchStick('tR', x => { tp.turn = Math.sign(x) * x * x; });      // squared, for small corrections
+touchButton('tShoot', () => tp.shoot = true, () => tp.shoot = false);
+touchButton('tIntake', () => { tp.intake = !tp.intake; });
+touchButton('tClimb', () => tp.climb = true, () => tp.climb = false);
+touchButton('tBlock', () => { if (game.me?.type.shuttle) tp.block = true; else press('blocker'); }, () => tp.block = false);
+touchButton('tCam', () => press('camera'));
+touchButton('tRel', () => press('relative'));
+touchButton('tReset', () => press('reset'));
+touchButton('tPause', () => setPaused(true));
+touchButton('tFull', () => {
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+});
+if (!document.documentElement.requestFullscreen) $('tFull').style.display = 'none';      // iPhones cannot
+if (matchMedia('(pointer: coarse)').matches) touchMode(true);
+window.addEventListener('touchstart', () => touchMode(true), { passive: true });
+// Which buttons this robot and this mode have.
+function drawTouch(me) {
+  const eject = !!me.type.shuttle;
+  $('tBlock').style.display = eject || me.type.blocker ? '' : 'none'; $('tBlock').textContent = eject ? 'EJECT' : 'BLOCK';
+  $('tBlock').classList.toggle('lit', !eject && !!me.blockOn);
+  $('tClimb').style.display = me.type.climb ? '' : 'none';
+  $('tReset').style.display = game.mode === 'free' ? '' : 'none';
+  $('tIntake').classList.toggle('lit', tp.intake);
 }
 function rumble(strength, ms) {
   const pad = (navigator.getGamepads?.() || []).find(p => p);
@@ -1829,8 +1931,10 @@ function readHuman(r) {
     if (b(3) && !padPrev.y) press('camera'); if (b(9) && !padPrev.start) setPaused(!paused);
     padPrev = { y: b(3), start: b(9) };
   }
+  if (tp.f || tp.s) { f = tp.f; s = tp.s; } if (tp.turn) turn = tp.turn;
+  intake = intake || tp.intake; shoot = shoot || tp.shoot; climb = climb || tp.climb;
   const c = r.cmd, v = r.type.speed, rel = !fieldRelative || camMode === 2;
-  if (r.type.shuttle) r.blockOn = down.has(keys.blocker) || !!pad?.buttons[1]?.pressed;      // held: eject
+  if (r.type.shuttle) r.blockOn = down.has(keys.blocker) || !!pad?.buttons[1]?.pressed || tp.block;      // held: eject
   if (rel) { const co = Math.cos(r.th), si = Math.sin(r.th); c.vx = (f * co - s * si) * v; c.vz = (f * si + s * co) * v; }
   else { const side = r.alliance === 'red' ? -1 : 1; c.vx = f * v * side; c.vz = s * v * side; }     // 'forward' is away from your own wall
   c.w = turn * r.type.turn; c.intake = intake; c.shoot = shoot; c.climb = climb;
@@ -2182,6 +2286,7 @@ function drawHud() {
   $('fuelbar').style.width = `${Math.min(100, 100 * me.hold.length / me.type.cap)}%`;
   $('fueltxt').textContent = me.type.overflow ? `Fuel ${me.hold.length}` + (me.hold.length > me.type.cap ? ' — OVERFLOWING' : '')
     : `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : '');
+  drawTouch(me);
   const plan = shotPlan(me);
   $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : me.jam && me.hold.length && !underTrench(me.x, me.z) ? 'One shooter jammed — half rate' : me.type.shuttle ? (me.hold.length ? `Hold ${keyName(keys.blocker)} to eject fuel` : 'Hopper empty') : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
     : plan.mode === 'pass' ? `Pass home (${plan.d.toFixed(1)} m)` : hubActive(me.alliance) ? `Hub shot (${plan.d.toFixed(1)} m)` : 'Hub is off — hold your fuel';
@@ -2198,7 +2303,8 @@ function toast(text) { const t = $('toast'); t.textContent = text; t.style.opaci
 // ============================================================
 // MENUS
 // ============================================================
-function show(name) { for (const id of ['menu', 'picker', 'settings', 'pause', 'results', 'lobby']) $(id).classList.toggle('on', id === name); $('hud').classList.toggle('on', state === 'play' || state === 'results'); }
+function show(name) { for (const id of ['menu', 'picker', 'settings', 'pause', 'results', 'lobby']) $(id).classList.toggle('on', id === name); $('hud').classList.toggle('on', state === 'play' || state === 'results');
+  const sticks = state === 'play' && !name; $('touch').classList.toggle('on', sticks); if (!sticks) clearTouch(); }
 function setPaused(v) { if (state !== 'play') return; paused = v; down.clear(); show(v ? 'pause' : null); $('btnRestart').style.display = net.role === 'client' ? 'none' : ''; }
 function choice(host, labels, get, set) {
   const el = $(host); el.innerHTML = '';
