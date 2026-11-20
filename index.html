@@ -426,6 +426,15 @@ const ROBOTS = [
     // Fuel comes in over the deck and runs down into the round bowl in the middle of the robot (pit), under the turret's feed.
     hopper: { x: [-0.19, 0.62], z: [-0.27, 0.27], y: 0.18, pit: { at: [0.032, -0.048], r: 0.21, y: 0.10, pull: 2.5, core: 0.12 } },      // core: the cone standing in the middle of the bowl
     bio: 'Fuel runs from the intake box down into a round bowl in the middle of the robot, and a turret beside it shoots about 7 a second, tilting its hood for range. It can shoot on the move, but loses accuracy the faster it drives. No climber.' },
+  // Team 1833 BEAN's Clover, from their public CAD and code release (tools/build_robot_static.py --drop --clear). Frame (24x30in),
+  // intake reach, shooter height and lane width are measured from the CAD; top speed is the code's (4.39 m/s); capacity is from a
+  // comment in their code (20 fuel is a quarter full); fire rate and accuracy are estimates. The four-lane shooter throws forward, out over its own intake and hopper.
+  { id: 'clover', num: 1833, blockable: true, name: 'Clover', tag: 'Team BEAN', color: 0x3fae49, size: 0.88, speed: 4.4, accel: 12, turn: 6.5, cap: 80, rate: 16, acc: 0.92, tall: false, climb: 0, mass: 1.4,
+    model: 'robot_clover.glb', fixed: true, frame: [0.61, 0.762], reach: 0.30, front: 0.611, shotY: 0.58, top: 0.55,
+    muzzle: 0.0, lanes: 4, laneGap: 0.168, intake: 20,      // four linked lanes, 26.5in across, on the tower in the middle; they fire forward over the hopper
+    // A netted hopper over a sloped roller floor that runs down toward the shooter; the side walls reach out over the slap-down intake.
+    hopper: { x: [-0.06, 0.58], z: [-0.33, 0.33], y: 0.12, slope: [-0.06, 0.2] },
+    bio: 'A slap-down intake fills a netted hopper that holds about 80 fuel. A sloped roller floor runs it back to a four-lane linked flywheel shooter on a leaning tower, which fires forward over the intake at about 16 a second: the inner lanes shoot straight and the outer two splay a little. Low enough for the trench without folding anything. No climber.' },
 ];
 // An AI robot for an alliance that already has these robots. A shuttle only helps next to a shooter, so at most one, and never alone.
 const aiRobot = mates => {
