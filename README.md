@@ -49,6 +49,7 @@ The host's browser runs the whole match, so it ends for everyone if the host lea
 - `robot_george.glb` — Furious George, an underhand shooter that lobs fuel out of its back end, simplified from its CAD.
 - `robot_team8.glb` — Heimdall, Team 8's hooded dumper, simplified from its CAD.
 - `robot_skadi.glb` — Skadi, Team 8's turret robot, simplified from its CAD.
+- `robot_clover.glb` — Clover, Team 1833 BEAN's 2026 robot, simplified from their public CAD release, with its top speed and hopper size from their published code.
 - `robot_shuttler.glb` — Peninsula Pups, a tall fuel shuttle with no shooter, simplified from its CAD.
 - `tools/build_field.py`, `tools/build_robot.py`, `tools/build_robot_static.py` — rebuild the models from STEP files. They need Python with `cascadio`, `trimesh` and `fast-simplification`.
 
@@ -58,4 +59,4 @@ Robot speeds, capacities and accuracy are estimates. Fuel in a hopper is a loose
 
 ## Credits
 
-Re-Blitz is the 2026 robot of FRC Team 2910, Jack in the Bot. The model and numbers come from the CAD and tech binder they published; this project is not affiliated with or endorsed by the team. The field model comes from the official FIRST field CAD.
+Re-Blitz is the 2026 robot of FRC Team 2910, Jack in the Bot. Clover is the 2026 robot of FRC Team 1833, BEAN; its model and numbers come from the CAD and code they released, and this project is not affiliated with or endorsed by them either. The model and numbers come from the CAD and tech binder they published; this project is not affiliated with or endorsed by the team. The field model comes from the official FIRST field CAD.
