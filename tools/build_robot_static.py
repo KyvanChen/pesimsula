@@ -22,6 +22,11 @@ the chassis in CAD metres. --clear REGEX names more parts to draw see-through (h
 --front-nx CX,CZ is for CAD with Y up and the intake towards -X: CX,CZ is the middle of the chassis in CAD metres.
 --front-nz CX,CZ is the same with the intake towards -Z.
 
+--keep REGEX keeps parts whose path matches it even if the usual filter would drop them (hopper walls that live in a
+bumper sub-assembly, say). --lift REGEX names parts that slide straight up and down (a telescoping hopper extension):
+they become lift_* nodes, drawn where the CAD has them. --hood-re REGEX picks the hood parts by name instead of from
+a second STEP file.
+
 --turret X,Y,Z,DX,DZ REGEX puts the parts whose path matches REGEX into turret_* nodes, for the game to spin. X,Y,Z is a
 point on the turret's axis and DX,DZ the way it fires as drawn, all in game axes; the nodes are stored in the turret's own
 axes (origin at that point, +X fires). --tilt REGEX names the turret parts that tilt with the hood: they become tilt_* nodes.
@@ -49,6 +54,15 @@ CLEAR = re.compile(r"Hopper", re.I)        # sub-assembly whose big thin panels 
 BUDGET = 110_000                           # triangles
 
 hood_src = None
+keep = lift = None
+hood_re = None
+for flag in ("--keep", "--lift", "--hood-re"):
+    if flag in sys.argv:
+        k = sys.argv.index(flag)
+        if flag == "--keep": keep = re.compile(sys.argv[k + 1])
+        elif flag == "--lift": lift = re.compile(sys.argv[k + 1])
+        else: hood_re = re.compile(sys.argv[k + 1])
+        del sys.argv[k:k + 2]
 extra_drop = None                          # --drop REGEX: more part paths to leave out (bumpers with no useful name, say)
 if "--drop" in sys.argv:
     k = sys.argv.index("--drop")
@@ -173,13 +187,14 @@ kept = 0
 for p in parts:
     verts = trimesh.transform_points(p["verts"], to_game)
     size = verts.max(0) - verts.min(0)
-    hit = DROP.search(p["path"]) or (extra_drop and extra_drop.search(p["path"]))
+    hit = None if keep and keep.search(p["path"]) else DROP.search(p["path"])
+    hit = hit or (extra_drop and extra_drop.search(p["path"]))
     fuel = size.min() > 0.14 and size.max() < 0.16 and p["rgba"][0] > 200 and p["rgba"][2] < 80      # a game piece left in the CAD
     if hit or fuel or size.max() < 0.035:
         dropped[hit.group(0).lower() if hit else "fuel" if fuel else "small"] += 1
         continue
     clear = bool(CLEAR.search(p["path"])) and size.min() < 0.01 and np.sort(size)[1] > 0.12 or p["rgba"][3] < 250 or bool(extra_clear and extra_clear.search(p["path"]))
-    kind = "hood" if p["hood"] else "body"
+    kind = "hood" if p["hood"] or (hood_re and hood_re.search(p["path"])) else "lift" if lift and lift.search(p["path"]) else "body"
     if turret and turret_re.search(p["path"]):
         kind = "tilt" if tilt and tilt.search(p["path"]) else "turret"
         verts = trimesh.transform_points(verts, to_turret)
@@ -239,7 +254,7 @@ for i, ((kind, clear, rgb), pieces) in enumerate(sorted(groups.items())):
     result.add_geometry(mesh, node_name=f"{kind if kind != 'body' else 'clear' if clear else 'body'}_{i}", geom_name=f"g_{i}")
     total += len(mesh.faces)
     print(f"  {kind}{' clear' if clear else ''} {rgb}: {len(mesh.faces):,} triangles, {mesh.vertices.min(0)} .. {mesh.vertices.max(0)}")
-    if kind in ("body", "hood"):
+    if kind in ("body", "hood", "lift"):
         lo, hi = np.minimum(lo, mesh.vertices.min(0)), np.maximum(hi, mesh.vertices.max(0))
 
 result.export(out)

@@ -426,6 +426,19 @@ const ROBOTS = [
     // Fuel comes in over the deck and runs down into the round bowl in the middle of the robot (pit), under the turret's feed.
     hopper: { x: [-0.19, 0.62], z: [-0.27, 0.27], y: 0.18, pit: { at: [0.032, -0.048], r: 0.21, y: 0.10, pull: 2.5, core: 0.12 } },      // core: the cone standing in the middle of the bowl
     bio: 'Fuel runs from the intake box down into a round bowl in the middle of the robot, and a turret beside it shoots about 7 a second, tilting its hood for range. It can shoot on the move, but loses accuracy the faster it drives. No climber.' },
+  // Team 5940's Lemon Puff, the robot they rebuilt mid-season, from their public CAD and 2026 technical binder (tools/build_robot_static.py
+  // --keep --clear --lift --hood-re). Frame (25x29in), intake reach, the 75-fuel hopper and the juicer are the binder's and the CAD's;
+  // fire rate, speed and accuracy are estimates. A 4.5-fuel-wide drum throws out of the back. The hood swings about the drum axle and
+  // stands above trench height as drawn in the CAD, so it rests folded and comes up to fire. The juicer (lift_* nodes) is a
+  // telescoping hopper extension: up it holds 75, and it slides down for the trench, which it can only do with 50 or less aboard.
+  { id: 'lemonpuff', num: 5940, blockable: true, name: 'Lemon Puff', tag: 'BREAD', color: 0xf2d23c, size: 0.88, speed: 4.5, accel: 12.5, turn: 6.5, cap: 75, rate: 22, acc: 0.95, tall: false, climb: 0, mass: 1.45,
+    model: 'robot_lemonpuff.glb', fixed: true, frame: [0.635, 0.737], reach: 0.30, front: 0.622, shotY: 0.62, top: 0.55,
+    hood: { pivot: [-0.261, 0.476], rest: -1.31, up: 0, span: [-0.36, 0.33] },      // as drawn in the CAD it is up; folded forward about the drum axle it clears the trench
+    juicer: { drop: 0.21, low: 50 },                                     // how far the hopper extension slides down, and how much fuel still fits with it down
+    muzzle: -0.2, rear: true, lanes: 4, laneGap: 0.155, intake: 24,     // four-wide drum at the back end, throwing away from the intake
+    // The belted indexer floor runs from the shooter ramp out to the sliding hopper wall over the intake; the side walls hang off the bumpers.
+    hopper: { x: [-0.05, 0.60], z: [-0.36, 0.36], y: 0.15 },
+    bio: 'An over-the-bumper roller intake fills a 75-fuel hopper, and a belted floor feeds a four-wide drum shooter at the back that empties it at about 22 a second. The juicer, a telescoping hopper extension, stands up for capacity and slides down for the trench, but only with 50 fuel or fewer aboard: any fuller and it has to go over the bump. The hood folds down to fit under the trench and swings up to fire. No climber.' },
 ];
 // An AI robot for an alliance that already has these robots. A shuttle only helps next to a shooter, so at most one, and never alone.
 const aiRobot = mates => {
@@ -770,7 +783,7 @@ function sendSnapshot() {
   const owner = new Uint8Array(FUEL), slot = new Uint8Array(FUEL);
   game.robots.forEach((r, ri) => {
     for (const f of ROBOT_FLOATS) { dv.setFloat32(o, r[f], true); o += 4; }
-    dv.setUint8(o++, r.climb); dv.setUint8(o++, (r.cmd.intake ? 1 : 0) | (r.atTower ? 2 : 0) | (r.blockOn ? 4 : 0) | (r.hoodUp > 0.5 ? 8 : 0));
+    dv.setUint8(o++, r.climb); dv.setUint8(o++, (r.cmd.intake ? 1 : 0) | (r.atTower ? 2 : 0) | (r.blockOn ? 4 : 0) | (r.hoodUp > 0.5 ? 8 : 0) | (r.juice > 0.5 ? 16 : 0));
     for (const k of ['scored', 'shots', 'passes', 'intaken']) { dv.setUint16(o, Math.min(65535, r.stats[k]), true); o += 2; }
     dv.setUint8(o++, Math.min(255, r.fouls));
     r.hold.forEach((i, k) => { owner[i] = ri + 1; slot[i] = k; });
@@ -849,6 +862,7 @@ function applySnapshot(a) {           // blend from the previous snapshot to the
     r.climb = q.climb; r.atTower = !!(q.flags & 2); r.stats = q.stats; r.fouls = q.fouls; r.hold = [];
     if (r !== game.me) { r.cmd.intake = !!(q.flags & 1); r.blockOn = !!(q.flags & 4); }
     if (r.type.hood) r.hoodUp = clamp((r.hoodUp || 0) + (q.flags & 8 ? 0.07 : -0.07), 0, 1);
+    if (r.type.juicer) r.juice = clamp(r.juice + (q.flags & 16 ? 0.035 : -0.035), 0, 1);
   });
   for (let i = 0; i < FUEL; i++) {
     const k = i * 3, f = nx.fuel, g = pv.fuel, b = balls[i];
@@ -1185,7 +1199,13 @@ function buildModelRobot(type, alliance) {
       const hood = new THREE.Group(), [px, py] = type.hood.pivot, list = [];
       body.traverse(o => { if (o.isMesh && (o.name + ' ' + o.parent.name).includes('hood')) list.push(o); });
       hood.position.set(px, py, 0); for (const o of list) { o.position.x -= px; o.position.y -= py; hood.add(o); }
-      g.add(hood); g.userData.shotHood = hood;
+      g.add(hood); g.userData.shotHood = hood; hood.rotation.z = type.hood.rest || 0;
+    }
+    if (type.juicer) {                   // the lift_* parts slide up and down together
+      const lift = new THREE.Group(), list = [];
+      body.traverse(o => { if (o.isMesh && (o.name + ' ' + o.parent.name).includes('lift')) list.push(o); });
+      for (const o of list) lift.add(o);
+      g.add(lift); g.userData.juicer = lift;
     }
     if (type.turret) {                   // turret_* and tilt_* nodes are stored in the turret's own axes: they hang off a group on its axis
       const spin = new THREE.Group(), tilt = new THREE.Group(), list = [], [px, py] = type.tilt?.pivot || [0, 0];
@@ -1351,7 +1371,7 @@ function feedBall(r, x, z) {
 }
 function makeRobot(type, alliance, slot, human, x, z, label) {
   const r = { type, alliance, slot, human, x, z, th: alliance === 'blue' ? 0 : Math.PI, vx: 0, vz: 0, w: 0, y: 0, pitch: 0, lift: 0,
-    hold: [], cool: 0, climb: 0, climbT: 0, atTower: false, contact: false, pin: 0, fouls: 0, block: 0, stow: 0, blockOn: false, aim: alliance === 'blue' ? 0 : Math.PI,
+    hold: [], cool: 0, climb: 0, climbT: 0, atTower: false, contact: false, pin: 0, fouls: 0, block: 0, stow: 0, juice: 1, blockOn: false, aim: alliance === 'blue' ? 0 : Math.PI,
     stats: { scored: 0, shots: 0, passes: 0, intaken: 0 },
     cmd: { vx: 0, vz: 0, w: 0, intake: false, shoot: false, climb: false },
     ai: { mode: 'score', goal: null, target: null, replan: 0, stuck: 0, jig: 0, jigAng: 0, chase: 0, last: 0, avoid: null, climbAt: 14 + Math.random() * 8 } };
@@ -1413,7 +1433,10 @@ function trenchAhead(r) {
   return false;
 }
 const startFront = t => hitbox(t, t.blocker ? 1 : 0).front;      // a robot whose intake stows starts with it up
-const isTall = r => r.type.tall || r.stow > 0.3 || r.hoodUp > 0.3;      // a stowed intake or a raised hood no longer fits under a trench
+const isTall = r => r.type.tall || r.stow > 0.3 || r.hoodUp > 0.3 || (r.type.juicer && r.juice > 0.3);      // a stowed intake, a raised hood or a raised juicer no longer fits under a trench
+// A juicer (a telescoping hopper extension) only comes down over a light load; with the extension down the hopper holds less.
+const juicerStuck = r => !!r.type.juicer && r.hold.length > r.type.juicer.low;
+const capOf = r => r.type.overflow ? 150 : r.type.juicer && r.juice < 0.95 ? r.type.juicer.low : r.type.cap;
 function overlap(r, o) {                                   // rotated chassis vs box, separating-axis test
   // Against a trench roof only the raised hood counts, so the rest of the robot may reach under while the hood touches the edge.
   const hood = o.kind === 'overhead' && r.type.hood, full = hitbox(r.type, r.stow, r.block, true);
@@ -1512,7 +1535,7 @@ function contactFoul(p, v) {
 
 // ---------- intake / shooter / climb ----------
 function runIntake(r) {
-  const free = (r.type.overflow ? 150 : r.type.cap) - r.hold.length;      // an open hopper keeps taking fuel and spills the extra
+  const free = capOf(r) - r.hold.length;      // an open hopper keeps taking fuel and spills the extra
   if (!r.cmd.intake || free <= 0 || r.climb || r.stow > 0.1 || ejecting(r)) return;
   const c = Math.cos(r.th), s = Math.sin(r.th), front = r.half + (r.type.reach || 0.16), back = r.half - 0.08, halfW = r.half * 0.85;
   // The rollers pass fuel at a steady rate; anything more waits in front of the intake.
@@ -1595,7 +1618,7 @@ function runClimb(r, dt) {
 // AI DRIVERS
 // ============================================================
 function route(r, tx, tz) {       // the hub line is only crossed through a bump or trench lane
-  const lanes = r.type.tall ? BUMP_LANES : ALL_LANES, near = (list, f) => list.reduce((b, v) => f(v) < f(b) ? v : b);
+  const lanes = r.type.tall || juicerStuck(r) ? BUMP_LANES : ALL_LANES, near = (list, f) => list.reduce((b, v) => f(v) < f(b) ? v : b);
   for (const lx of [HUBX, L - HUBX].sort((a, b) => Math.abs(a - r.x) - Math.abs(b - r.x))) {
     const sr = r.x - lx, st = tx - lx, sign = sr >= 0 ? 1 : -1, under = underTrench(tx, tz);
     if (Math.abs(sr) < BAND) {
@@ -2008,6 +2031,7 @@ function newGame(roster, mode) {
   }
   // An intake that can stow starts stowed, with the shot blocker down. Under a trench there is no room, so there it starts out.
   for (const r of game.robots) if (r.blockBody && !underTrench(r.x, r.z)) { r.startStow = true; r.stow = 1; }
+  for (const r of game.robots) if (r.type.juicer && underTrench(r.x, r.z)) r.juice = 0;      // a juicer starting under a trench starts down
   for (const r of game.robots) collideField(r);
   if (net.role === 'client') { for (let i = 0; i < FUEL; i++) takeBall(i); } else stageFuel();
   camMode = 0; acc = 0;
@@ -2073,7 +2097,7 @@ function tick() {
     const y = r.y + r.lift + 0.21;
     r.kt = { x: r.x, y, z: r.z, th: r.th };          // where its body has to be by the end of this tick
     // The intake is solid to fuel unless it is actually taking fuel in: a full or idle intake ploughs fuel, it does not swallow it.
-    if (r.nose) { const taking = r.cmd.intake && (r.type.overflow ? 150 : r.type.cap) > r.hold.length && !r.climb && r.stow <= 0.1 && !ejecting(r); r.nose.setEnabled(!taking && r.stow < 0.5); }
+    if (r.nose) { const taking = r.cmd.intake && capOf(r) > r.hold.length && !r.climb && r.stow <= 0.1 && !ejecting(r); r.nose.setEnabled(!taking && r.stow < 0.5); }
     if (r.type.turret) {                 // the turret tracks its target whatever the chassis is doing
       const plan = shotPlan(r);
       r.aim += clamp(wrap(Math.atan2(plan.z - r.z, plan.x - r.x) - r.aim), -9 * dt, 9 * dt);
@@ -2087,6 +2111,10 @@ function tick() {
       const roof = OBSTACLES.some(o => o.kind === 'overhead' && overlap(r, o));
       const up = r.hoodWait > 0 && (!roof || r.hoodUp > 0.3);
       r.hoodUp = clamp((r.hoodUp || 0) + (up ? dt : -dt) / 0.25, 0, 1);
+    }
+    if (r.type.juicer) {                 // up for capacity; down for a trench, if the load is light enough to squeeze under it
+      const down = (trenchAhead(r) || underTrench(r.x, r.z)) && !juicerStuck(r);
+      r.juice = clamp(r.juice + (down ? -dt : dt) / 0.5, 0, 1);
     }
     if (r.blockBody) {
       // Sequence: intake swings up, then the blocker deploys; lowering runs it backwards.
@@ -2239,7 +2267,8 @@ function render() {
         u.tiltHood.rotation.z = tl.down + (tl.up - tl.down) * r.hood;
       }
     }
-    if (u.shotHood) { const k = r.hoodUp || 0; u.shotHood.rotation.z = r.type.hood.up * k * k * (3 - 2 * k); }
+    if (u.shotHood) { const k = r.hoodUp || 0, rest = r.type.hood.rest || 0; u.shotHood.rotation.z = rest + (r.type.hood.up - rest) * k * k * (3 - 2 * k); }
+    if (u.juicer) { const k = r.juice; u.juicer.position.y = -r.type.juicer.drop * (1 - k * k * (3 - 2 * k)); }
     r.mesh.userData.roller.material.emissiveIntensity = r.cmd.intake ? 2.5 : 0.2;
     if (r.cmd.intake) r.mesh.userData.roller.rotation.y += 0.5;
   }
@@ -2285,7 +2314,7 @@ function drawHud() {
   for (const [id, a] of [['hb', 'blue'], ['hr', 'red']]) { const on = hubActive(a); $(id).textContent = on ? 'HUB ACTIVE' : 'HUB OFF'; $(id).className = on ? 'hubon' : 'huboff'; }
   $('fuelbar').style.width = `${Math.min(100, 100 * me.hold.length / me.type.cap)}%`;
   $('fueltxt').textContent = me.type.overflow ? `Fuel ${me.hold.length}` + (me.hold.length > me.type.cap ? ' — OVERFLOWING' : '')
-    : `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : '');
+    : `Fuel ${me.hold.length}/${me.type.cap}` + (me.hold.length >= me.type.cap ? ' — FULL' : juicerStuck(me) ? ' — TOO FULL FOR THE TRENCH' : '');
   drawTouch(me);
   const plan = shotPlan(me);
   $('shooter').textContent = me.climb ? `On tower — level ${me.climb}` : me.jam && me.hold.length && !underTrench(me.x, me.z) ? 'One shooter jammed — half rate' : me.type.shuttle ? (me.hold.length ? `Hold ${keyName(keys.blocker)} to eject fuel` : 'Hopper empty') : !me.hold.length ? 'Shooter empty' : underTrench(me.x, me.z) ? 'Under trench — cannot shoot'
@@ -2403,7 +2432,7 @@ function drawPicker() {
   const bar = (name, frac, text) => `<div class="stat"><span>${name}</span><div class="bar"><i style="width:${Math.round(clamp(frac, 0.04, 1) * 100)}%"></i></div><b>${text}</b></div>`;
   $('stats').innerHTML = bar('Speed', t.speed / 5, t.speed.toFixed(1)) + bar('Acceleration', t.accel / 15, t.accel) + bar('Hopper', t.cap / 55, t.cap) +
     bar('Fire rate', t.rate / 12, t.rate + '/s') + bar('Accuracy', (t.acc - 0.75) / 0.25, Math.round(t.acc * 100) + '%') + bar('Climb', t.climb / 3, 'L' + t.climb) +
-    bar('Weight', t.mass / 2, t.mass.toFixed(1)) + `<p class="note" style="margin:10px 0 0">${t.tall ? 'Too tall for the trenches — crosses over the bumps.' : 'Fits under the trenches.'}${t.blocker ? ' Intake stows and a shot blocker deploys.' : ''}${t.sotm ? ' Shoots on the move.' : ''}${t.shuttle ? ' No shooter — ejects fuel out of the intake.' : ''}</p>`;
+    bar('Weight', t.mass / 2, t.mass.toFixed(1)) + `<p class="note" style="margin:10px 0 0">${t.tall ? 'Too tall for the trenches — crosses over the bumps.' : 'Fits under the trenches.'}${t.blocker ? ' Intake stows and a shot blocker deploys.' : ''}${t.sotm ? ' Shoots on the move.' : ''}${t.shuttle ? ' No shooter — ejects fuel out of the intake.' : ''}${t.juicer ? ` Its hopper extension drops for the trench only with ${t.juicer.low} fuel or fewer aboard.` : ''}</p>`;
   [opts.sx, opts.sz] = startSpot(opts.sx, opts.sz, t);       // a different robot may not fit where the last one stood
   drawMap();
 }
